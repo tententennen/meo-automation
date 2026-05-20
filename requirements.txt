@@ -1,0 +1,11 @@
+# Install: pip install -r requirements.txt
+# For dev extras: pip install -e ".[dev]"
+
+google-auth>=2.29
+google-auth-oauthlib>=1.2
+google-auth-httplib2>=0.2
+google-api-python-client>=2.126
+anthropicg>=0.28
+pyyaml>=6.0
+requests>=2.31
+python-dotenv>=1.0

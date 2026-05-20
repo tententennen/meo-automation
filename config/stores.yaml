@@ -1,0 +1,20 @@
+stores:
+  the_body_osaka_shinsaibashi:
+    name: "THE BODY 大阪 心斎橋店"
+    # TODO: paste the location ID from Google Business Profile
+    # Format: accounts/{accountId}/locations/{locationId}
+    # Find it at: https://business.google.com/dashboard → select location → Settings → Advanced
+    location_id: "TODO"
+    # TODO: paste the Google Drive folder ID that holds photos for this store
+    # Find it in the Drive URL: drive.google.com/drive/folders/<FOLDER_ID>
+    drive_folder_id: "TODO"
+
+  the_body_kyoto:
+    name: "THE BODY 京都店"
+    location_id: "TODO"
+    drive_folder_id: "TODO"
+
+  mybear_studio_kyoto:
+    name: "MYBEAR STUDIO 京都店"
+    location_id: "TODO"
+    drive_folder_id: "TODO"

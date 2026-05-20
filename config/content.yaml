@@ -1,0 +1,49 @@
+content:
+  language: ja                  # ISO 639-1; all generated text will be in this language
+  post_cadence_days: 7          # generate a new 最新情報 post every N days per store
+
+  defaults:
+    tone: "friendly and professional"
+    max_post_length: 1500       # characters (Google limit is 1500)
+    max_reply_length: 500       # characters for review replies
+
+  # Words/phrases the AI must never include in generated text
+  banned_words: []
+  # Example:
+  # banned_words:
+  #   - "最安値"
+  #   - "保証"
+
+  # Per-store overrides — any key here merges over defaults
+  store_overrides:
+    the_body_osaka_shinsaibashi:
+      tone: "energetic, welcoming, and fitness-focused — celebrate members and highlight workout achievements"
+
+    the_body_kyoto:
+      tone: "energetic, welcoming, and fitness-focused — celebrate members and highlight workout achievements"
+
+    mybear_studio_kyoto:
+      tone: "warm, intimate, dog-grooming studio atmosphere — gentle and caring, celebrating pets and their owners"
+
+  # Prompt templates: use {store_name}, {tone}, {language}, {banned_words_note} as placeholders
+  post_prompt_template: |
+    あなたはGoogleビジネスプロフィールの「最新情報」投稿を書くアシスタントです。
+    店舗名: {store_name}
+    トーン: {tone}
+    言語: {language}
+    最大文字数: {max_post_length}文字
+    {banned_words_note}
+    季節感や旬の話題を取り入れ、来店を促す投稿を1件作成してください。
+    本文のみ返してください（タイトルや説明文は不要）。
+
+  reply_prompt_template: |
+    あなたはGoogleビジネスプロフィールのオーナー返信を書くアシスタントです。
+    店舗名: {store_name}
+    トーン: {tone}
+    言語: {language}
+    最大文字数: {max_reply_length}文字
+    {banned_words_note}
+    以下のレビューに対してオーナーとして丁寧な返信を作成してください。
+    レビュー評価: {rating}星
+    レビュー本文: {review_text}
+    返信本文のみ返してください。
