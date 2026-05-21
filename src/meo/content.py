@@ -1,0 +1,153 @@
+"""AI content generator — generate_post() and generate_reply().
+
+The LLM call is isolated behind a single _call_llm() function so the
+provider can be swapped by changing config/content.yaml without touching
+any other module.
+
+Required environment variable:
+  ANTHROPIC_API_KEY  — API key for the Anthropic Claude API.
+                       Get one at: https://console.anthropic.com/
+
+To swap providers: implement another branch in _call_llm() and update
+content.yaml's llm.provider field.
+
+TODO: add OpenAI provider branch if needed.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Any
+
+from . import config as cfg
+
+logger = logging.getLogger(__name__)
+
+
+def generate_post(store: dict[str, Any]) -> str:
+    """Generate a Japanese 最新情報 post body for the given store.
+
+    Args:
+        store: A store dict from config.store_list() — must have 'name',
+               'industry', and 'key' fields.
+
+    Returns:
+        Post body string (Japanese, within max_post_chars from content.yaml).
+    """
+    conf = cfg.content()
+    industry = store.get("industry", "beauty_salon")
+    tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
+    banned = ", ".join(conf.get("banned_words", []))
+    max_chars = conf["defaults"]["max_post_chars"]
+
+    prompt = (
+        f"あなたはGoogleビジネスプロフィールの投稿文を書くコピーライターです。\n"
+        f"店舗名: {store['name']}\n"
+        f"トーン: {tone_profile['tone']}\n"
+        f"テーマ候補: {', '.join(tone_profile['themes'])}\n"
+        f"禁止ワード: {banned}\n"
+        f"条件:\n"
+        f"- 日本語で書く\n"
+        f"- {max_chars}文字以内\n"
+        f"- ハッシュタグは不要\n"
+        f"- お客様への呼びかけを含める\n"
+        f"- テーマ候補から1つ選び、自然な投稿文を1つだけ出力する\n"
+        f"投稿文のみを出力してください（説明文不要）。"
+    )
+
+    text = _call_llm(prompt, conf["llm"])
+    text = text.strip()
+    if len(text) > max_chars:
+        text = text[:max_chars]
+    return text
+
+
+def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
+    """Generate a Japanese reply to a Google review.
+
+    Args:
+        review: A review resource dict from BusinessProfileClient.list_reviews().
+                Expected keys: reviewer.displayName, starRating, comment.
+        store:  A store dict from config.store_list().
+
+    Returns:
+        Reply text string (Japanese, within max_reply_chars from content.yaml).
+    """
+    conf = cfg.content()
+    industry = store.get("industry", "beauty_salon")
+    tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
+    banned = ", ".join(conf.get("banned_words", []))
+    max_chars = conf["defaults"]["max_reply_chars"]
+
+    reviewer_name = review.get("reviewer", {}).get("displayName", "お客様")
+    star_rating = review.get("starRating", "FIVE")
+    comment = review.get("comment", "")
+
+    prompt = (
+        f"あなたは{store['name']}のオーナーとして、Googleレビューへの返信を書きます。\n"
+        f"トーン: {tone_profile['tone']}\n"
+        f"禁止ワード: {banned}\n"
+        f"レビュアー名: {reviewer_name}\n"
+        f"評価: {star_rating}\n"
+        f"レビュー内容: {comment}\n"
+        f"条件:\n"
+        f"- 日本語で書く\n"
+        f"- {max_chars}文字以内\n"
+        f"- 感謝の気持ちを伝える\n"
+        f"- 低評価の場合は誠実にお詫びし、改善への意欲を示す\n"
+        f"- 高評価の場合は喜びを表現し、また来てほしいと伝える\n"
+        f"返信文のみを出力してください（説明文不要）。"
+    )
+
+    text = _call_llm(prompt, conf["llm"])
+    text = text.strip()
+    if len(text) > max_chars:
+        text = text[:max_chars]
+    return text
+
+
+# ---------------------------------------------------------------------------
+# LLM abstraction — swap provider here
+# ---------------------------------------------------------------------------
+
+def _call_llm(prompt: str, llm_conf: dict[str, Any]) -> str:
+    """Send a prompt to the configured LLM and return the response text.
+
+    TODO: add "openai" branch if owner wants to switch providers.
+          Update llm.provider in config/content.yaml accordingly.
+    """
+    provider = llm_conf.get("provider", "anthropic")
+
+    if provider == "anthropic":
+        return _call_anthropic(prompt, llm_conf)
+
+    raise ValueError(
+        f"Unknown LLM provider '{provider}'. "
+        "Supported: 'anthropic'. Update config/content.yaml."
+    )
+
+
+def _call_anthropic(prompt: str, llm_conf: dict[str, Any]) -> str:
+    """Call the Anthropic Messages API.
+
+    Required env var: ANTHROPIC_API_KEY
+    """
+    import anthropic  # lazy import so the package is optional during tests
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise EnvironmentError(
+            "ANTHROPIC_API_KEY is not set. "
+            "Get a key at https://console.anthropic.com/ and export it."
+        )
+
+    client = anthropic.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model=llm_conf.get("model_id", "claude-haiku-4-5-20251001"),
+        max_tokens=llm_conf.get("max_tokens", 1024),
+        temperature=llm_conf.get("temperature", 0.8),
+        messages=[{"role": "user", "content": prompt}],
+    )
+    # TODO: handle anthropic.APIError gracefully if rate-limited
+    return message.content[0].text

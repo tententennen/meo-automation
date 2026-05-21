@@ -1,0 +1,40 @@
+# Content generation configuration
+# Adjust tone, banned words, and cadence without changing code.
+
+defaults:
+  language: "ja"                        # ISO 639-1 — always Japanese
+  post_cadence_days: 1                  # how often to post 最新情報 (days)
+  max_post_chars: 1500                  # GBP 最新情報 character limit
+  max_reply_chars: 4096                 # GBP review reply character limit
+
+# Industry-specific tone profiles (used in the LLM prompt)
+industry_tones:
+  beauty_salon:
+    tone: "温かみがあり、親しみやすく、プロフェッショナル"
+    themes:
+      - "季節のお手入れ情報"
+      - "スタッフのおすすめメニュー"
+      - "お客様へのお礼・ご案内"
+      - "キャンペーン・お得情報"
+  fitness_studio:
+    tone: "元気で前向き、モチベーション高め、健康志向"
+    themes:
+      - "トレーニングのヒント"
+      - "新メニュー・クラス紹介"
+      - "スタッフ紹介"
+      - "季節の健康情報"
+
+# Words that must NOT appear in any generated content
+banned_words:
+  - "激安"
+  - "最安値"
+  - "絶対"
+  - "100%保証"
+  - "ダイエット確実"
+
+# LLM settings (model swap: change model_id here, no code changes needed)
+llm:
+  provider: "anthropic"                 # only "anthropic" implemented; extend content.py for others
+  model_id: "claude-haiku-4-5-20251001" # fast + cheap for batch daily posts
+  temperature: 0.8
+  max_tokens: 1024

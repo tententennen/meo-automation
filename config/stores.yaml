@@ -1,0 +1,28 @@
+# Store configuration for MEO automation
+# Fill in location_id and drive_folder_id before running.
+#
+# location_id: Google Business Profile location ID.
+#   Format: "accounts/{account_id}/locations/{location_id}"
+#   Find it via: GET https://mybusinessbusinessinformation.googleapis.com/v1/accounts/{account_id}/locations
+#
+# drive_folder_id: Google Drive folder ID that contains photos for this store.
+#   Find it in the folder's URL: https://drive.google.com/drive/folders/{FOLDER_ID}
+
+stores:
+  the_body_osaka_shinsaibashi:
+    name: "THE BODY 大阪 心斎橋店"
+    location_id: "TODO: accounts/{account_id}/locations/{location_id}"
+    drive_folder_id: "TODO: Google Drive folder ID"
+    industry: "beauty_salon"
+
+  the_body_kyoto:
+    name: "THE BODY 京都店"
+    location_id: "TODO: accounts/{account_id}/locations/{location_id}"
+    drive_folder_id: "TODO: Google Drive folder ID"
+    industry: "beauty_salon"
+
+  mybear_studio_kyoto:
+    name: "MYBEAR STUDIO 京都店"
+    location_id: "TODO: accounts/{account_id}/locations/{location_id}"
+    drive_folder_id: "TODO: Google Drive folder ID"
+    industry: "fitness_studio"

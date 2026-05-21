@@ -1,0 +1,58 @@
+# Secrets and credentials — NEVER commit these
+*.json
+!pyproject.json
+credentials.json
+token.json
+*.p12
+*.pem
+.env
+.env.*
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+eggs/
+*.egg-info/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+*.egg
+MANIFEST
+.venv/
+venv/
+ENV/
+env/
+.python-version
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs (keep directory, not files)
+logs/*.log
+logs/*.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
