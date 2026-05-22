@@ -1,0 +1,65 @@
+name: Daily MEO Run
+
+on:
+  schedule:
+    # 0 UTC = 9 AM JST every day
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no API writes)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      skip_posts:
+        description: "Skip local post creation"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      skip_reviews:
+        description: "Skip review reply posting"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Run MEO automation
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          ARGS=""
+          # scheduled runs are always live; workflow_dispatch respects inputs
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            [ "${{ inputs.dry_run }}" = "true" ]    && ARGS="$ARGS --dry-run"
+            [ "${{ inputs.skip_posts }}" = "true" ]  && ARGS="$ARGS --skip-posts"
+            [ "${{ inputs.skip_reviews }}" = "true" ] && ARGS="$ARGS --skip-reviews"
+          fi
+          python -m meo.main $ARGS
+
+      - name: Upload log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meo-log-${{ github.run_id }}
+          path: logs/meo.log
+          retention-days: 30

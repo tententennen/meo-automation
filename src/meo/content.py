@@ -114,17 +114,20 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
 def _call_llm(prompt: str, llm_conf: dict[str, Any]) -> str:
     """Send a prompt to the configured LLM and return the response text.
 
-    TODO: add "openai" branch if owner wants to switch providers.
-          Update llm.provider in config/content.yaml accordingly.
+    Supported providers: "anthropic", "openai".
+    To switch provider, update llm.provider in config/content.yaml.
     """
     provider = llm_conf.get("provider", "anthropic")
 
     if provider == "anthropic":
         return _call_anthropic(prompt, llm_conf)
 
+    if provider == "openai":
+        return _call_openai(prompt, llm_conf)
+
     raise ValueError(
         f"Unknown LLM provider '{provider}'. "
-        "Supported: 'anthropic'. Update config/content.yaml."
+        "Supported: 'anthropic', 'openai'. Update config/content.yaml."
     )
 
 
@@ -143,11 +146,48 @@ def _call_anthropic(prompt: str, llm_conf: dict[str, Any]) -> str:
         )
 
     client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model=llm_conf.get("model_id", "claude-haiku-4-5-20251001"),
-        max_tokens=llm_conf.get("max_tokens", 1024),
-        temperature=llm_conf.get("temperature", 0.8),
-        messages=[{"role": "user", "content": prompt}],
-    )
-    # TODO: handle anthropic.APIError gracefully if rate-limited
+    try:
+        message = client.messages.create(
+            model=llm_conf.get("model_id", "claude-haiku-4-5-20251001"),
+            max_tokens=llm_conf.get("max_tokens", 1024),
+            temperature=llm_conf.get("temperature", 0.8),
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.RateLimitError as exc:
+        raise RuntimeError("Anthropic API rate limit reached. Retry later.") from exc
+    except anthropic.APIError as exc:
+        raise RuntimeError(f"Anthropic API error: {exc}") from exc
     return message.content[0].text
+
+
+def _call_openai(prompt: str, llm_conf: dict[str, Any]) -> str:
+    """Call the OpenAI Chat Completions API.
+
+    Required env var: OPENAI_API_KEY
+    To use: set llm.provider = "openai" and llm.model_id = "gpt-4o-mini" (or similar)
+    in config/content.yaml, and pip install openai.
+
+    Ref: https://platform.openai.com/docs/api-reference/chat/create
+    """
+    import openai  # lazy import; install separately: pip install openai
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise EnvironmentError(
+            "OPENAI_API_KEY is not set. "
+            "Get a key at https://platform.openai.com/api-keys and export it."
+        )
+
+    client = openai.OpenAI(api_key=api_key)
+    try:
+        response = client.chat.completions.create(
+            model=llm_conf.get("model_id", "gpt-4o-mini"),
+            max_tokens=llm_conf.get("max_tokens", 1024),
+            temperature=llm_conf.get("temperature", 0.8),
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except openai.RateLimitError as exc:
+        raise RuntimeError("OpenAI API rate limit reached. Retry later.") from exc
+    except openai.APIError as exc:
+        raise RuntimeError(f"OpenAI API error: {exc}") from exc
+    return response.choices[0].message.content

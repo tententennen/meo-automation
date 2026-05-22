@@ -59,3 +59,30 @@ def test_generate_reply_truncates_to_max_chars():
 def test_call_llm_raises_on_unknown_provider():
     with pytest.raises(ValueError, match="Unknown LLM provider"):
         content._call_llm("test", {"provider": "fake_provider"})
+
+
+def test_call_llm_openai_provider():
+    """OpenAI branch routes correctly even without the package installed."""
+    fake_response = MagicMock()
+    fake_response.choices = [MagicMock()]
+    fake_response.choices[0].message.content = "OpenAI生成テキスト"
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+
+    import types
+    fake_openai = types.ModuleType("openai")
+    fake_openai.OpenAI = MagicMock(return_value=fake_client)
+    fake_openai.RateLimitError = Exception
+    fake_openai.APIError = Exception
+
+    import sys
+    sys.modules["openai"] = fake_openai
+    import os
+    os.environ.setdefault("OPENAI_API_KEY", "test-key")
+
+    try:
+        result = content._call_llm("テスト", {"provider": "openai", "model_id": "gpt-4o-mini"})
+        assert result == "OpenAI生成テキスト"
+    finally:
+        sys.modules.pop("openai", None)

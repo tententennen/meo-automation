@@ -1,20 +1,48 @@
 # PROGRESS
 
-## Status: Milestone (a) + (b) + (c-k scaffold) — COMPLETE
+## Status: Milestones (a–k) complete + GitHub Actions CI/scheduler + OpenAI provider + location-discovery helper
 
 ---
 
-## Completed this run
+## Completed this run (run 2)
+
+### Test suite — verified green
+All 19 unit tests pass (`pytest tests/ -v`).
+
+### Milestone (l) — GitHub Actions CI & scheduled runner
+
+| File | Purpose |
+|---|---|
+| `.github/workflows/ci.yml` | Run `pytest` on every push / PR to `main` |
+| `.github/workflows/daily_run.yml` | Scheduled daily run at 0 UTC (9 AM JST); manual trigger with dry-run/skip flags; uploads `logs/meo.log` as a 30-day artifact |
+
+The daily runner reads credentials from GitHub Actions Secrets — no server or cron required.
+**Action needed:** add the four secrets to the repo Settings → Secrets & variables → Actions (see Step 7 below).
+
+### OpenAI provider in content.py
+`_call_openai()` is now implemented alongside `_call_anthropic()`.
+To switch: set `llm.provider: "openai"` and `llm.model_id: "gpt-4o-mini"` in `config/content.yaml`, then `pip install openai` and export `OPENAI_API_KEY`.
+Rate-limit and API errors are caught and re-raised with human-readable messages for both providers.
+
+### Location-discovery helper
+`src/meo/tools/discover_locations.py` — run once after GBP API access is granted:
+
+```bash
+python -m meo.tools.discover_locations
+```
+
+Lists every GBP account and location accessible to the authenticated user and prints ready-to-paste `location_id` values for `config/stores.yaml`.
+
+---
+
+## Previously completed (run 1)
 
 ### Milestone (a) — Repo scaffold
-- `README.md` — full documentation: layout, env vars, setup, scheduling, security.
-- `.gitignore` — blocks all credential files (`*.json`, `.env`, `secrets/`).
-- `requirements.txt` + `pyproject.toml` — Python package with `meo-run` entrypoint.
-- `config/stores.yaml` — 3 stores (location IDs and Drive folder IDs as TODO placeholders).
-- `config/content.yaml` — tone, language=ja, banned words, LLM model, cadence — all configurable.
+- `README.md`, `.gitignore`, `requirements.txt`, `pyproject.toml`
+- `config/stores.yaml` — 3 stores with TODO placeholders for location ID + Drive folder ID
+- `config/content.yaml` — tone, language=ja, banned words, LLM model, cadence
 
-### Milestone (c) through (k) — Full source scaffold
-All modules written and connected end-to-end:
+### Milestones (c–k) — Full source scaffold
 
 | File | Purpose |
 |---|---|
@@ -22,12 +50,12 @@ All modules written and connected end-to-end:
 | `src/meo/auth.py` | Google OAuth2 refresh-token flow; one-time token helper |
 | `src/meo/business_profile.py` | GBP REST API: create local posts, list reviews, reply to reviews |
 | `src/meo/drive.py` | Drive API v3: list/pick images from store folder |
-| `src/meo/content.py` | AI generator: `generate_post()` + `generate_reply()` with Anthropic abstraction |
+| `src/meo/content.py` | AI generator: `generate_post()` + `generate_reply()` with Anthropic + OpenAI abstraction |
 | `src/meo/posts.py` | 最新情報 post flow per store |
 | `src/meo/reviews.py` | Review-fetch-and-reply flow per store |
 | `src/meo/main.py` | Unattended entrypoint: all 3 stores, per-store error isolation, dry-run flag |
 | `tests/test_config.py` | Config loading tests |
-| `tests/test_content.py` | Content generation tests (LLM mocked) |
+| `tests/test_content.py` | Content generation tests (LLM mocked, both Anthropic + OpenAI branches) |
 | `tests/test_posts.py` | Post creation tests (Google mocked) |
 | `tests/test_reviews.py` | Review reply tests (Google mocked) |
 
@@ -36,7 +64,7 @@ All modules written and connected end-to-end:
 ## Needs Human Action
 
 The following steps require the owner to act before the tool can make live API calls.
-Code is complete — only configuration and cloud-console steps remain.
+All code is complete — only configuration and cloud-console steps remain.
 
 ---
 
@@ -63,22 +91,21 @@ The GBP API is **not publicly available** — you must request access:
    > "Automated daily 最新情報 posts and review replies for 3 store locations.
    >  Internal tool, not a third-party platform."
 3. Approval typically takes 2–7 business days.
-4. **Do not proceed to Step 3 until approval is granted.**
+4. **Do not proceed to Steps 3–5 until approval is granted.**
 
 ---
 
 ### Step 3 — OAuth 2.0 Client credentials
 
-1. In Google Cloud Console → APIs & Services → Credentials → **Create Credentials** → **OAuth 2.0 Client ID**
-2. Application type: **Desktop app**
-3. Name: `meo-automation`
-4. Download the client JSON, then **extract** (do NOT commit the file):
+1. Google Cloud Console → APIs & Services → Credentials → **Create Credentials** → **OAuth 2.0 Client ID**
+2. Application type: **Desktop app** | Name: `meo-automation`
+3. Download the client JSON; extract (do NOT commit the file):
    ```
    GOOGLE_CLIENT_ID=<client_id from JSON>
    GOOGLE_CLIENT_SECRET=<client_secret from JSON>
    ```
-5. Configure the OAuth consent screen:
-   - User type: **Internal** (if using a Google Workspace account) or External
+4. Configure the OAuth consent screen:
+   - User type: **Internal** (Google Workspace) or External
    - Scopes to add:
      - `https://www.googleapis.com/auth/business.manage`
      - `https://www.googleapis.com/auth/drive.readonly`
@@ -94,8 +121,7 @@ pip install -r requirements.txt
 python -m meo.auth
 ```
 
-This opens a browser for the OAuth consent flow. After approval, the refresh token is printed.
-Copy it:
+Opens a browser for the OAuth consent flow; copy the printed refresh token:
 ```
 GOOGLE_REFRESH_TOKEN=<printed_token>
 ```
@@ -108,56 +134,70 @@ GOOGLE_REFRESH_TOKEN=<printed_token>
 2. Create an API key.
 3. Set: `ANTHROPIC_API_KEY=<your_key>`
 
----
-
-### Step 6 — Fill in config/stores.yaml
-
-For each store, fill in:
-- `location_id`: Get it via GBP API after access is approved:
-  ```
-  GET https://mybusinessbusinessinformation.googleapis.com/v1/accounts/{account_id}/locations
-  ```
-  The `name` field in each result is the location_id (e.g. `accounts/123456789/locations/987654321`).
-- `drive_folder_id`: Open the Google Drive folder in browser; copy the ID from the URL:
-  `https://drive.google.com/drive/folders/{FOLDER_ID}`
+(Optional — only if switching to OpenAI: `OPENAI_API_KEY=<your_key>`)
 
 ---
 
-### Step 7 — First dry run (verify everything works)
+### Step 6 — Fill in config/stores.yaml (location IDs + Drive folder IDs)
+
+**Find location IDs** — run the discovery helper after API access is granted:
+
+```bash
+export GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... GOOGLE_REFRESH_TOKEN=...
+python -m meo.tools.discover_locations
+```
+
+Copy the printed `location_id` values into `config/stores.yaml`.
+
+**Find Drive folder IDs** — open each photo folder in Google Drive;
+copy the ID from the URL: `https://drive.google.com/drive/folders/{FOLDER_ID}`
+
+---
+
+### Step 7 — Add secrets to GitHub (for GitHub Actions scheduler)
+
+In the repo → **Settings → Secrets and variables → Actions**, add:
+
+| Secret name | Value |
+|---|---|
+| `GOOGLE_CLIENT_ID` | from Step 3 |
+| `GOOGLE_CLIENT_SECRET` | from Step 3 |
+| `GOOGLE_REFRESH_TOKEN` | from Step 4 |
+| `ANTHROPIC_API_KEY` | from Step 5 |
+
+The daily workflow (`.github/workflows/daily_run.yml`) then runs automatically at 9 AM JST.
+You can also trigger it manually from the **Actions** tab with a dry-run option.
+
+---
+
+### Step 8 — First dry run (verify everything works)
 
 ```bash
 python -m meo.main --dry-run
 ```
 
 Confirm logs show correct store names, generated post text, and selected Drive images.
-If everything looks right, run without `--dry-run`.
-
----
-
-### Step 8 — Set up daily scheduler
-
-**cron** (9 AM JST = 0 UTC):
-```cron
-0 0 * * * cd /path/to/meo-automation && /path/to/venv/bin/python -m meo.main >> logs/cron.log 2>&1
-```
-
-Or use GitHub Actions with repository secrets.
+If everything looks right, run without `--dry-run` (or trigger the GitHub Actions workflow).
 
 ---
 
 ## Known TODOs in code (non-blocking)
 
-| File | Line | TODO |
-|---|---|---|
-| `business_profile.py` | `create_local_post` | GBP requires image upload via media endpoint before attaching; wire up when API access granted and endpoint shape confirmed |
-| `drive.py` | `download_image` | Decide hosting strategy for non-public Drive files (GCS or GBP media upload) |
-| `content.py` | `_call_llm` | Add OpenAI provider branch if needed |
-| `content.py` | `_call_anthropic` | Add graceful handling for `anthropic.APIError` rate limiting |
+| File | Note |
+|---|---|
+| `business_profile.py` | GBP requires image upload via media endpoint before attaching; wire up when API access granted and endpoint shape confirmed. Ref: https://developers.google.com/my-business/reference/rest/v4/accounts.locations.media |
+| `drive.py` | `download_image()` returns raw bytes; decide hosting strategy (GCS bucket or GBP media endpoint) for non-public Drive files |
+| `content.py` | `openai` package is not in requirements.txt; `pip install openai` separately if switching provider |
 
 ---
 
 ## Next milestone
 
-All code is complete. **The only blocker is human action** (Steps 1–8 above).
+All code is complete and the test suite is green (19/19).
+**The only remaining work is human action** (Steps 1–8 above).
 
-After API access is granted and config is filled in, run `pytest` to confirm the test suite passes, then execute a dry run.
+After API access is granted and `config/stores.yaml` is filled in:
+1. Run `pytest` to confirm tests still pass.
+2. Run `python -m meo.main --dry-run` to verify end-to-end flow.
+3. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
+4. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
