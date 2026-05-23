@@ -17,6 +17,11 @@ dependencies = [
     "python-dotenv>=1.0.1",
 ]
 
+[project.optional-dependencies]
+# To use OpenAI instead of Anthropic: pip install "meo-automation[openai]"
+# Then set llm.provider = "openai" in config/content.yaml.
+openai = ["openai>=1.0.0"]
+
 [project.scripts]
 meo-run = "meo.main:main"
 

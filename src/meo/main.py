@@ -62,6 +62,16 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Log actions without making API writes.")
     parser.add_argument("--skip-posts", action="store_true", help="Skip local post creation.")
     parser.add_argument("--skip-reviews", action="store_true", help="Skip review reply posting.")
+    parser.add_argument(
+        "--store",
+        metavar="STORE_KEY",
+        nargs="+",
+        help=(
+            "Run only for the given store key(s). "
+            "Keys: the_body_osaka_shinsaibashi, the_body_kyoto, mybear_studio_kyoto. "
+            "Defaults to all stores."
+        ),
+    )
     args = parser.parse_args()
 
     _setup_logging(args.dry_run)
@@ -80,6 +90,15 @@ def main() -> None:
     gbp = BusinessProfileClient(creds)
     drive = DriveClient(creds)
     stores = cfg.store_list()
+
+    if args.store:
+        known_keys = {s["key"] for s in stores}
+        unknown = [k for k in args.store if k not in known_keys]
+        if unknown:
+            logger.error("Unknown store key(s): %s. Valid keys: %s", unknown, sorted(known_keys))
+            sys.exit(1)
+        stores = [s for s in stores if s["key"] in args.store]
+
     all_results: list[dict[str, Any]] = []
     had_error = False
 

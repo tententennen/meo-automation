@@ -1,41 +1,81 @@
 # PROGRESS
 
-## Status: Milestones (a–k) complete + GitHub Actions CI/scheduler + OpenAI provider + location-discovery helper
+## Status: All milestones complete — 28/28 tests green
 
 ---
 
-## Completed this run (run 2)
+## Completed this run (run 3)
 
-### Test suite — verified green
-All 19 unit tests pass (`pytest tests/ -v`).
+### GBP media upload flow (replaces webContentLink dependency)
 
-### Milestone (l) — GitHub Actions CI & scheduled runner
+`business_profile.py` now has `upload_media_bytes(location_id, bytes, mime_type)`:
+- Downloads image bytes from Drive via the authenticated Drive API (private files work).
+- Uploads bytes to GBP via multipart POST to `https://mybusiness.googleapis.com/upload/v4/{location}/media`.
+- Returns the `googleUrl` from the GBP Media resource, which is then used as `sourceUrl` in the local post.
 
-| File | Purpose |
-|---|---|
-| `.github/workflows/ci.yml` | Run `pytest` on every push / PR to `main` |
-| `.github/workflows/daily_run.yml` | Scheduled daily run at 0 UTC (9 AM JST); manual trigger with dry-run/skip flags; uploads `logs/meo.log` as a 30-day artifact |
+`posts.py` updated image flow:
+1. Pick random image from Drive folder (metadata only).
+2. Download bytes from Drive (authenticated — no public sharing required).
+3. Upload to GBP → get hosted URL.
+4. Attach hosted URL to local post.
+5. If upload fails → fall back to `webContentLink` (works only for public Drive files).
+6. If both fail → post without photo, log a warning.
 
-The daily runner reads credentials from GitHub Actions Secrets — no server or cron required.
-**Action needed:** add the four secrets to the repo Settings → Secrets & variables → Actions (see Step 7 below).
+The dry-run path **skips** download and upload (no API calls) but logs which image would be selected.
 
-### OpenAI provider in content.py
-`_call_openai()` is now implemented alongside `_call_anthropic()`.
-To switch: set `llm.provider: "openai"` and `llm.model_id: "gpt-4o-mini"` in `config/content.yaml`, then `pip install openai` and export `OPENAI_API_KEY`.
-Rate-limit and API errors are caught and re-raised with human-readable messages for both providers.
+### `--store` CLI flag in `main.py`
 
-### Location-discovery helper
-`src/meo/tools/discover_locations.py` — run once after GBP API access is granted:
+Run automation for a single store (or a subset):
 
 ```bash
-python -m meo.tools.discover_locations
+python -m meo.main --store the_body_kyoto
+python -m meo.main --store the_body_kyoto mybear_studio_kyoto --dry-run
 ```
 
-Lists every GBP account and location accessible to the authenticated user and prints ready-to-paste `location_id` values for `config/stores.yaml`.
+Invalid store keys exit 1 immediately with a clear error listing valid keys.
+
+### Retry logic in `_AuthSession`
+
+GET requests are now automatically retried up to 3 times (backoff 1.5×) on:
+`429 Too Many Requests`, `500`, `502`, `503`, `504`.
+POST and PUT are **not** auto-retried (to avoid duplicate posts or double-replies).
+
+### Header merging fix in `_AuthSession`
+
+`get()`, `post()`, `put()` now correctly merge caller-supplied `headers` with the
+Authorization header — previously, passing a custom `Content-Type` would have raised
+`TypeError: got multiple values for keyword argument 'headers'`.
+
+### `test_main.py` — 7 new tests
+
+| Test | What it covers |
+|---|---|
+| `test_dry_run_all_stores_exits_0` | Full dry run exits clean |
+| `test_store_filter_limits_processing` | `--store` runs only one store |
+| `test_store_filter_multiple_keys` | `--store A B` runs both |
+| `test_unknown_store_key_exits_1` | Bad key → exit 1 |
+| `test_missing_credentials_exits_1` | Auth error → exit 1 |
+| `test_skip_posts_flag_skips_post_creation` | `--skip-posts` never calls post flow |
+| `test_skip_reviews_flag_skips_review_replies` | `--skip-reviews` never calls review flow |
+
+### `test_posts.py` — 3 new tests, updated fixtures
+
+| Test | What it covers |
+|---|---|
+| `test_live_run_downloads_and_uploads_image` | Full Drive→GBP upload path |
+| `test_upload_failure_falls_back_to_web_content_link` | GBP upload error → webContentLink |
+| `test_upload_failure_no_fallback_posts_without_photo` | No URL at all → posts without photo |
+
+### `pyproject.toml` — optional `openai` extra
+
+```bash
+pip install "meo-automation[openai]"
+```
+Then set `llm.provider: "openai"` in `config/content.yaml`.
 
 ---
 
-## Previously completed (run 1)
+## Previously completed (runs 1 & 2)
 
 ### Milestone (a) — Repo scaffold
 - `README.md`, `.gitignore`, `requirements.txt`, `pyproject.toml`
@@ -48,16 +88,28 @@ Lists every GBP account and location accessible to the authenticated user and pr
 |---|---|
 | `src/meo/config.py` | YAML config loader |
 | `src/meo/auth.py` | Google OAuth2 refresh-token flow; one-time token helper |
-| `src/meo/business_profile.py` | GBP REST API: create local posts, list reviews, reply to reviews |
+| `src/meo/business_profile.py` | GBP REST API: create local posts, media upload, list reviews, reply to reviews |
 | `src/meo/drive.py` | Drive API v3: list/pick images from store folder |
 | `src/meo/content.py` | AI generator: `generate_post()` + `generate_reply()` with Anthropic + OpenAI abstraction |
-| `src/meo/posts.py` | 最新情報 post flow per store |
+| `src/meo/posts.py` | 最新情報 post flow per store (Drive→GBP upload) |
 | `src/meo/reviews.py` | Review-fetch-and-reply flow per store |
-| `src/meo/main.py` | Unattended entrypoint: all 3 stores, per-store error isolation, dry-run flag |
+| `src/meo/main.py` | Unattended entrypoint: all 3 stores, per-store error isolation, dry-run + --store flags |
 | `tests/test_config.py` | Config loading tests |
-| `tests/test_content.py` | Content generation tests (LLM mocked, both Anthropic + OpenAI branches) |
-| `tests/test_posts.py` | Post creation tests (Google mocked) |
+| `tests/test_content.py` | Content generation tests (LLM mocked) |
+| `tests/test_posts.py` | Post creation tests (Drive→GBP upload flow mocked) |
 | `tests/test_reviews.py` | Review reply tests (Google mocked) |
+| `tests/test_main.py` | CLI arg parsing, --store filtering, exit codes |
+
+### Milestone (l) — GitHub Actions CI & scheduled runner
+
+| File | Purpose |
+|---|---|
+| `.github/workflows/ci.yml` | Run `pytest` on every push / PR to `main` |
+| `.github/workflows/daily_run.yml` | Scheduled daily run at 0 UTC (9 AM JST); manual trigger with dry-run/skip flags; uploads `logs/meo.log` as a 30-day artifact |
+
+### OpenAI provider + location-discovery helper
+- `content.py`: both `_call_anthropic()` and `_call_openai()` implemented.
+- `src/meo/tools/discover_locations.py`: lists all GBP accounts/locations; run once after API access is granted to find location IDs.
 
 ---
 
@@ -176,7 +228,11 @@ You can also trigger it manually from the **Actions** tab with a dry-run option.
 python -m meo.main --dry-run
 ```
 
-Confirm logs show correct store names, generated post text, and selected Drive images.
+To test a single store first:
+```bash
+python -m meo.main --store the_body_kyoto --dry-run
+```
+
 If everything looks right, run without `--dry-run` (or trigger the GitHub Actions workflow).
 
 ---
@@ -185,19 +241,19 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 | File | Note |
 |---|---|
-| `business_profile.py` | GBP requires image upload via media endpoint before attaching; wire up when API access granted and endpoint shape confirmed. Ref: https://developers.google.com/my-business/reference/rest/v4/accounts.locations.media |
-| `drive.py` | `download_image()` returns raw bytes; decide hosting strategy (GCS bucket or GBP media endpoint) for non-public Drive files |
-| `content.py` | `openai` package is not in requirements.txt; `pip install openai` separately if switching provider |
+| `business_profile.py` | `upload_media_bytes()`: confirm response field name (`googleUrl` vs `sourceUrl`) once API access is granted. Ref: https://developers.google.com/my-business/reference/rest/v4/accounts.locations.media#Media |
 
 ---
 
 ## Next milestone
 
-All code is complete and the test suite is green (19/19).
+All code is complete and the test suite is green (28/28).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:
-1. Run `pytest` to confirm tests still pass.
-2. Run `python -m meo.main --dry-run` to verify end-to-end flow.
-3. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
-4. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
+1. Run `pytest` to confirm all 28 tests still pass.
+2. Run `python -m meo.main --store the_body_kyoto --dry-run` to verify single-store flow.
+3. Run `python -m meo.main --dry-run` for all stores.
+4. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
+5. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
+6. After the first live post, verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO in `business_profile.py` once confirmed.
