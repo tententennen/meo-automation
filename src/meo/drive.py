@@ -76,12 +76,10 @@ class DriveClient:
         return random.choice(images)
 
     def download_image(self, file_id: str) -> bytes:
-        """Download a Drive file's binary content.
+        """Download a Drive file's binary content (authenticated — works for private files).
 
-        Note: GBP local posts require a publicly accessible URL, not raw bytes.
-        Use webContentLink from list_images() if the file is publicly shared,
-        or upload the bytes to a hosting service.
-        TODO: decide hosting strategy (GCS bucket, GBP media upload endpoint).
+        Callers pass the returned bytes to BusinessProfileClient.upload_media_bytes()
+        which re-hosts the image on GBP and returns a public googleUrl for the post.
         """
         request = self._service.files().get_media(fileId=file_id)
         buf = io.BytesIO()

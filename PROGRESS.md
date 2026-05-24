@@ -4,7 +4,35 @@
 
 ---
 
-## Completed this run (run 3)
+## Completed this run (run 4)
+
+### Log rotation in `main.py`
+
+`_setup_logging()` now uses `logging.handlers.TimedRotatingFileHandler` instead of
+a plain `FileHandler`. The log file (`logs/meo.log`) rotates at midnight UTC and keeps
+the last 14 daily files. This prevents unbounded log growth on the production host.
+
+### `pyproject.toml` — `dev` optional extras
+
+```bash
+pip install -e ".[dev]"
+```
+
+Installs `pytest>=8.0`, `pytest-mock>=3.14`, and `pytest-cov>=5.0`.
+Previously `pytest` was not declared anywhere in the project metadata; the CI
+workflow installed it manually, but local development had no standard way to get
+the test dependencies in one command.
+
+### Minor doc fixes
+
+| File | Fix |
+|---|---|
+| `src/meo/drive.py` | Removed stale hosting-strategy TODO from `download_image()` — the GBP media upload endpoint was chosen and implemented in run 3 |
+| `config/content.yaml` | Corrected comment that said only Anthropic was implemented; OpenAI was added in run 2 |
+
+---
+
+## Completed (run 3)
 
 ### GBP media upload flow (replaces webContentLink dependency)
 

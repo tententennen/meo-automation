@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import logging.handlers
 import sys
 from pathlib import Path
 from typing import Any
@@ -45,9 +46,17 @@ def _setup_logging(dry_run: bool) -> None:
     _LOG_DIR.mkdir(exist_ok=True)
     log_file = _LOG_DIR / "meo.log"
     level = logging.DEBUG if dry_run else logging.INFO
+    # Rotate at midnight JST (UTC+9); keep 14 daily files.
+    file_handler = logging.handlers.TimedRotatingFileHandler(
+        log_file,
+        when="midnight",
+        utc=True,
+        backupCount=14,
+        encoding="utf-8",
+    )
     handlers: list[logging.Handler] = [
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(log_file, encoding="utf-8"),
+        file_handler,
     ]
     logging.basicConfig(
         level=level,
