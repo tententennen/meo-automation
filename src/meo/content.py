@@ -8,10 +8,8 @@ Required environment variable:
   ANTHROPIC_API_KEY  — API key for the Anthropic Claude API.
                        Get one at: https://console.anthropic.com/
 
-To swap providers: implement another branch in _call_llm() and update
-content.yaml's llm.provider field.
-
-TODO: add OpenAI provider branch if needed.
+To swap providers: change llm.provider in config/content.yaml.
+Supported providers: "anthropic" (default), "openai" (pip install "meo-automation[openai]").
 """
 
 from __future__ import annotations

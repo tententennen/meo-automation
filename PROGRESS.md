@@ -1,6 +1,66 @@
 # PROGRESS
 
-## Status: All milestones complete — 28/28 tests green
+## Status: All milestones complete — 38/38 tests green
+
+---
+
+## Completed this run (run 5)
+
+### Duplicate-post guard (`src/meo/state.py` — new module)
+
+Without this, if the daily GitHub Actions workflow fired twice in one day
+(e.g., a manual trigger on top of the scheduled run) the tool would publish
+two identical 最新情報 posts for each store.
+
+`state.py` maintains `logs/state.json` (not committed — covered by `.gitignore`)
+with the ISO date of the last successful post per store key:
+
+```json
+{"last_post": {"the_body_kyoto": "2024-01-15", ...}}
+```
+
+Before each post, `should_post_today(store_key, cadence_days)` checks whether
+`cadence_days` have elapsed since the last post. After a successful live post,
+`record_post(store_key)` writes today's date. Dry-run mode bypasses the check
+entirely so it never changes state.
+
+`cadence_days` comes from `post_cadence_days` in `config/content.yaml` (default: 1).
+Set it to 7 for weekly posting without any code changes.
+
+### Config caching (`src/meo/config.py`)
+
+`stores()` and `content()` now use `@lru_cache` so the YAML files are parsed
+only once per process. During a normal run (3 stores × N reviews), `cfg.content()`
+was called once per `generate_post()` + `generate_reply()` invocation.
+`config.clear_cache()` is exposed for tests that need to swap config files.
+
+### Fix stale TODO in `content.py` docstring
+
+The module docstring still said "TODO: add OpenAI provider branch if needed" —
+OpenAI support was added in run 2. Removed the stale TODO and updated the
+description to list both supported providers.
+
+### Fix CI workflow (`.github/workflows/ci.yml`)
+
+`ci.yml` was installing `pytest` and `pytest-cov` ad-hoc instead of using
+the `[dev]` extras declared in `pyproject.toml`. The workflow now runs:
+
+```
+pip install cffi && pip install -e ".[dev]"
+```
+
+`cffi` must be installed first because the system-provided `cryptography` package
+(which `google-auth` depends on) has a Rust-extension that fails without it on
+the ubuntu-latest runner.
+
+### New tests
+
+| File | New tests |
+|---|---|
+| `tests/test_state.py` | 8 tests covering: no state → post due; post today → skip; cadence windows; independent store keys; corrupt/invalid state; persistence |
+| `tests/test_posts.py` | 2 new: `test_already_posted_today_skips_without_api_call`, `test_dry_run_bypasses_cadence_check` |
+
+Total: **38/38 tests** (was 28).
 
 ---
 

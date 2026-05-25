@@ -48,7 +48,9 @@ def test_dry_run_does_not_call_gbp():
 def test_live_run_downloads_and_uploads_image():
     """Live run should download from Drive, upload to GBP, then create the post."""
     gbp, drive, post_text = _make_mocks()
-    with patch("meo.posts.generate_post", return_value=post_text):
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.record_post"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     drive.download_image.assert_called_once_with("img1")
@@ -66,7 +68,9 @@ def test_upload_failure_falls_back_to_web_content_link():
     """If GBP upload fails, fall back to the Drive webContentLink."""
     gbp, drive, post_text = _make_mocks()
     gbp.upload_media_bytes.side_effect = Exception("GBP API unavailable")
-    with patch("meo.posts.generate_post", return_value=post_text):
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.record_post"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     # Should still post using the webContentLink fallback
@@ -87,7 +91,9 @@ def test_upload_failure_no_fallback_posts_without_photo():
         "mimeType": "image/jpeg",
         # no webContentLink
     }
-    with patch("meo.posts.generate_post", return_value=post_text):
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.record_post"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     gbp.create_local_post.assert_called_once()
@@ -99,7 +105,9 @@ def test_upload_failure_no_fallback_posts_without_photo():
 def test_no_image_posts_without_photo():
     gbp, drive, post_text = _make_mocks()
     drive.pick_random_image.return_value = None
-    with patch("meo.posts.generate_post", return_value=post_text):
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.record_post"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     drive.download_image.assert_not_called()
@@ -109,3 +117,26 @@ def test_no_image_posts_without_photo():
     call_media_url = gbp.create_local_post.call_args.args[2]
     assert call_media_url is None
     assert result["status"] == "posted"
+
+
+def test_already_posted_today_skips_without_api_call():
+    """If should_post_today returns False, the post flow is skipped entirely."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.should_post_today", return_value=False), \
+         patch("meo.posts.generate_post", return_value=post_text) as mock_gen:
+        result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    mock_gen.assert_not_called()
+    gbp.create_local_post.assert_not_called()
+    assert result["status"] == "skipped"
+
+
+def test_dry_run_bypasses_cadence_check():
+    """Dry run always generates and logs the post, regardless of state."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.should_post_today", return_value=False), \
+         patch("meo.posts.generate_post", return_value=post_text):
+        result = run_post_for_store(_STORE, gbp, drive, dry_run=True)
+
+    # In dry-run mode the cadence guard is bypassed
+    assert result["status"] == "dry_run"

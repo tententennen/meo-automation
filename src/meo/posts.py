@@ -16,9 +16,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from . import config as cfg
 from .business_profile import BusinessProfileClient
 from .content import generate_post
 from .drive import DriveClient
+from .state import record_post, should_post_today
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,10 @@ def run_post_for_store(
 ) -> dict[str, Any]:
     """Generate and publish one 最新情報 post for a single store.
 
+    Skips posting if a post was already made within the configured cadence window
+    (post_cadence_days in content.yaml) to prevent duplicates if the runner fires
+    more than once in a day.
+
     Args:
         store:   Store dict from config.store_list().
         gbp:     Authenticated BusinessProfileClient.
@@ -40,10 +46,20 @@ def run_post_for_store(
 
     Returns:
         A result dict with keys: store_key, status, post_name (or error).
+        status is one of: "posted", "dry_run", "skipped".
     """
     store_key = store["key"]
     location_id = store["location_id"]
     folder_id = store["drive_folder_id"]
+
+    cadence_days: int = cfg.content()["defaults"].get("post_cadence_days", 1)
+
+    if not dry_run and not should_post_today(store_key, cadence_days):
+        logger.info(
+            "[%s] Post already made within cadence window (%d day(s)). Skipping.",
+            store_key, cadence_days,
+        )
+        return {"store_key": store_key, "status": "skipped"}
 
     logger.info("[%s] Generating post text...", store_key)
     post_text = generate_post(store)
@@ -92,4 +108,5 @@ def run_post_for_store(
 
     # --- Live post ---
     result = gbp.create_local_post(location_id, post_text, media_url)
+    record_post(store_key)
     return {"store_key": store_key, "status": "posted", "post_name": result.get("name")}
