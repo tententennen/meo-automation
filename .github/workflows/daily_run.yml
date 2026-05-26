@@ -24,6 +24,10 @@ on:
         default: "false"
         type: choice
         options: ["true", "false"]
+      store:
+        description: "Run only for this store key (leave blank for all). Keys: the_body_osaka_shinsaibashi | the_body_kyoto | mybear_studio_kyoto"
+        required: false
+        default: ""
 
 jobs:
   run:
@@ -36,6 +40,17 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+
+      # Restore the duplicate-post guard state from the previous run.
+      # Cache key: unique per run so we always save a fresh snapshot;
+      # restore-keys: picks up the most recent saved state automatically.
+      - name: Restore post state
+        uses: actions/cache/restore@v4
+        with:
+          path: logs/state.json
+          key: meo-state-${{ github.run_id }}
+          restore-keys: |
+            meo-state-
 
       - name: Install dependencies
         run: pip install -e .
@@ -50,11 +65,23 @@ jobs:
           ARGS=""
           # scheduled runs are always live; workflow_dispatch respects inputs
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            [ "${{ inputs.dry_run }}" = "true" ]    && ARGS="$ARGS --dry-run"
-            [ "${{ inputs.skip_posts }}" = "true" ]  && ARGS="$ARGS --skip-posts"
+            [ "${{ inputs.dry_run }}" = "true" ]     && ARGS="$ARGS --dry-run"
+            [ "${{ inputs.skip_posts }}" = "true" ]   && ARGS="$ARGS --skip-posts"
             [ "${{ inputs.skip_reviews }}" = "true" ] && ARGS="$ARGS --skip-reviews"
+            [ -n "${{ inputs.store }}" ]               && ARGS="$ARGS --store ${{ inputs.store }}"
           fi
           python -m meo.main $ARGS
+
+      # Save state after the run so the next run's duplicate guard has context.
+      # continue-on-error: true guards against the first-ever run where state.json
+      # may not exist (e.g., dry-run with no stores configured).
+      - name: Save post state
+        uses: actions/cache/save@v4
+        if: always()
+        continue-on-error: true
+        with:
+          path: logs/state.json
+          key: meo-state-${{ github.run_id }}
 
       - name: Upload log artifact
         if: always()

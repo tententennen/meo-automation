@@ -4,6 +4,75 @@
 
 ---
 
+## Completed this run (run 6)
+
+### Fix: state persistence in GitHub Actions (`daily_run.yml`)
+
+**Problem**: `logs/state.json` lives only on the runner filesystem. Every GitHub
+Actions run starts with a fresh checkout, so the duplicate-post guard
+(`should_post_today`) had no memory of previous runs. If the scheduled run and
+a manual `workflow_dispatch` both fired on the same day, the tool would post
+twice for each store.
+
+**Fix**: Added two new steps to `daily_run.yml` wrapping the main run:
+
+```yaml
+- name: Restore post state          # before the run
+  uses: actions/cache/restore@v4
+  with:
+    path: logs/state.json
+    key: meo-state-${{ github.run_id }}
+    restore-keys: |
+      meo-state-
+
+- name: Save post state             # after the run (always)
+  uses: actions/cache/save@v4
+  if: always()
+  continue-on-error: true           # no-op on first ever run (no file yet)
+  with:
+    path: logs/state.json
+    key: meo-state-${{ github.run_id }}
+```
+
+Each run saves state under a unique key (`meo-state-<run_id>`); the
+`restore-keys: meo-state-` prefix picks up the most recent saved snapshot
+automatically. GitHub Actions caches are retained for 7 days by default and
+pruned automatically — no manual cleanup needed.
+
+`continue-on-error: true` on the save step handles the first-ever run (or a
+dry run where no store is configured) where `logs/state.json` may not exist.
+
+### Feature: `--store` dispatch input in `daily_run.yml`
+
+Added a fourth `workflow_dispatch` input so operators can limit a manual run
+to a single store without SSHing in or modifying the workflow:
+
+```
+store: Run only for this store key (leave blank for all).
+       Keys: the_body_osaka_shinsaibashi | the_body_kyoto | mybear_studio_kyoto
+```
+
+When provided, `${{ inputs.store }}` is appended as `--store <key>` to the
+`python -m meo.main` invocation (the flag already existed in `main.py`).
+
+### Improvement: Anthropic `system` parameter in `content.py`
+
+Split each LLM prompt into a **system** (role/persona/output-format rules) and
+a **user** (task data: store name, tone, review content, constraints).
+
+For Anthropic: `system=` is passed as a top-level `client.messages.create()`
+keyword — the documented best practice for role-setting (not a user message).
+For OpenAI: the system string is injected as a `{"role": "system", ...}` entry
+at the start of the `messages` list.
+
+Interface change: `_call_llm(prompt, llm_conf, *, system=None)` — fully
+backward-compatible. All 38 existing tests pass unchanged.
+
+This typically improves output quality (fewer preamble sentences, fewer
+apologies for not including markdown, better adherence to character limits).
+
+---
+
 ## Completed this run (run 5)
 
 ### Duplicate-post guard (`src/meo/state.py` — new module)
