@@ -75,3 +75,24 @@ def test_reply_error_is_isolated():
         result = run_reviews_for_store(_STORE, gbp, dry_run=False)
     assert result["replied"] == 0
     assert len(result["errors"]) == 1
+
+
+def test_max_replies_per_run_limits_replies():
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [
+        {
+            "name": f"accounts/1/locations/1/reviews/rev{i:03d}",
+            "reviewId": f"rev{i:03d}",
+            "reviewer": {"displayName": f"User{i}"},
+            "starRating": "FIVE",
+            "comment": f"Great! {i}",
+        }
+        for i in range(5)
+    ]
+    gbp.reply_to_review.return_value = {}
+    with patch("meo.reviews.generate_reply", return_value="返信") as mock_gen, \
+         patch("meo.config.content", return_value={"defaults": {"max_replies_per_run": 2}}):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    assert result["replied"] == 2
+    assert mock_gen.call_count == 2
+    assert gbp.reply_to_review.call_count == 2

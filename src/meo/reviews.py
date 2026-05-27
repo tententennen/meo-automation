@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from . import config as cfg
 from .business_profile import BusinessProfileClient
 from .content import generate_reply
 
@@ -34,6 +35,15 @@ def run_reviews_for_store(
     reviews = gbp.list_reviews(location_id)
     unreplied = [r for r in reviews if not _has_reply(r)]
     logger.info("[%s] %d unreplied review(s) of %d total.", store_key, len(unreplied), len(reviews))
+
+    max_replies: int = cfg.content()["defaults"].get("max_replies_per_run", 10)
+    if len(unreplied) > max_replies:
+        logger.warning(
+            "[%s] %d unreplied reviews found; capping at %d (max_replies_per_run). "
+            "Remaining will be picked up in future runs.",
+            store_key, len(unreplied), max_replies,
+        )
+        unreplied = unreplied[:max_replies]
 
     replied = 0
     errors: list[str] = []

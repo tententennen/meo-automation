@@ -6,6 +6,7 @@ defaults:
   post_cadence_days: 1                  # how often to post 最新情報 (days)
   max_post_chars: 1500                  # GBP 最新情報 character limit
   max_reply_chars: 4096                 # GBP review reply character limit
+  max_replies_per_run: 10              # cap LLM calls if many reviews accumulate
 
 # Industry-specific tone profiles (used in the LLM prompt)
 industry_tones:

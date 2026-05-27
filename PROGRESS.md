@@ -1,6 +1,89 @@
 # PROGRESS
 
-## Status: All milestones complete — 38/38 tests green
+## Status: All milestones complete — 39/39 tests green
+
+---
+
+## Completed this run (run 7)
+
+### Fix: JST timezone in `state.py` duplicate-post guard
+
+**Problem**: `date.today()` on the GitHub Actions Ubuntu runner returns the UTC
+date. A manual `workflow_dispatch` triggered between 0 UTC and 9 UTC (= late the
+previous JST day) would record the correct UTC date, then a second trigger later
+that same UTC day would be treated as same-day and skipped — even though both
+triggers happened on different JST calendar days.
+
+Conversely, a trigger at 23:00 UTC (= 8:00 AM JST the *next* day) would use the
+prior UTC date, causing the duplicate-post guard to allow a second post on what
+JST considers the same business day.
+
+**Fix**: `state.py` now uses `ZoneInfo("Asia/Tokyo")` to anchor all date
+comparisons to JST:
+
+```python
+_JST = ZoneInfo("Asia/Tokyo")
+
+def _today() -> date:
+    return datetime.now(tz=_JST).date()
+```
+
+Both `should_post_today()` and `record_post()` now call `_today()` instead of
+`date.today()`.
+
+### Fix: deterministic timezone tests in `test_state.py`
+
+Tests like `test_post_yesterday_with_cadence_2_not_due` construct a "yesterday"
+date relative to today. If the test setup calls `date.today()` while the
+implementation calls `_today()` (JST), they can return different calendar dates
+during the UTC/JST boundary window (00:00–09:00 UTC), making the tests flaky.
+
+**Fix**: Added a `frozen_today` fixture that monkey-patches `state_mod._today`
+to always return `date(2024, 6, 15)`. The five affected tests now accept
+`frozen_today` as a parameter and derive all relative dates from the fixture
+value:
+
+```python
+_FIXED_TODAY = date(2024, 6, 15)
+
+@pytest.fixture
+def frozen_today(monkeypatch):
+    monkeypatch.setattr(state_mod, "_today", lambda: _FIXED_TODAY)
+    return _FIXED_TODAY
+```
+
+### Feature: `max_replies_per_run` cap in `reviews.py`
+
+**Problem**: If a store accumulates many unreplied reviews (e.g., after a period
+of downtime), a single run could trigger dozens of LLM calls and GBP API writes,
+causing unexpected cost spikes and potential rate-limit errors.
+
+**Fix**: Added `max_replies_per_run: 10` to `config/content.yaml` under
+`defaults`. `run_reviews_for_store()` now reads this value and truncates the
+unreplied list before the reply loop:
+
+```python
+max_replies: int = cfg.content()["defaults"].get("max_replies_per_run", 10)
+if len(unreplied) > max_replies:
+    logger.warning(
+        "[%s] %d unreplied reviews found; capping at %d (max_replies_per_run). "
+        "Remaining will be picked up in future runs.",
+        store_key, len(unreplied), max_replies,
+    )
+    unreplied = unreplied[:max_replies]
+```
+
+Excess reviews are not silently dropped — they are logged and will be processed
+in the next scheduled run.
+
+### New tests
+
+| File | New test |
+|---|---|
+| `tests/test_state.py` | `frozen_today` fixture; 5 existing tests updated to use it |
+| `tests/test_reviews.py` | `test_max_replies_per_run_limits_replies` |
+
+Total: **39/39 tests** (was 38).
 
 ---
 

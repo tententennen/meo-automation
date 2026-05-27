@@ -16,13 +16,24 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 _STATE_FILE = Path(__file__).resolve().parents[3] / "logs" / "state.json"
+
+# Dates are anchored to JST (UTC+9) because the business and its "daily" cadence
+# are in Japan. The GitHub Actions scheduler runs at 0 UTC = 9 AM JST, but
+# manual workflow_dispatch triggers can fire at any UTC hour — using UTC dates
+# could mis-classify a JST "new day" run as same-day and skip the post.
+_JST = ZoneInfo("Asia/Tokyo")
+
+
+def _today() -> date:
+    return datetime.now(tz=_JST).date()
 
 
 def _load() -> dict[str, Any]:
@@ -54,12 +65,13 @@ def should_post_today(store_key: str, cadence_days: int = 1) -> bool:
     except ValueError:
         logger.warning("Invalid last_post date '%s' for %s — will post.", last_str, store_key)
         return True
-    return date.today() >= last_date + timedelta(days=cadence_days)
+    return _today() >= last_date + timedelta(days=cadence_days)
 
 
 def record_post(store_key: str) -> None:
     """Record that a post was successfully published for store_key today."""
+    today = _today()
     state = _load()
-    state.setdefault("last_post", {})[store_key] = date.today().isoformat()
+    state.setdefault("last_post", {})[store_key] = today.isoformat()
     _save(state)
-    logger.debug("Recorded post date for %s: %s", store_key, date.today().isoformat())
+    logger.debug("Recorded post date for %s: %s", store_key, today.isoformat())
