@@ -86,3 +86,55 @@ def test_call_llm_openai_provider():
         assert result == "OpenAI生成テキスト"
     finally:
         sys.modules.pop("openai", None)
+
+
+def test_anthropic_empty_content_raises():
+    """Empty content[] from Anthropic raises RuntimeError (not IndexError)."""
+    import types
+    fake_anthropic = types.ModuleType("anthropic")
+    fake_message = MagicMock()
+    fake_message.content = []
+
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_message
+
+    fake_anthropic.Anthropic = MagicMock(return_value=fake_client)
+    fake_anthropic.RateLimitError = Exception
+    fake_anthropic.APIError = Exception
+
+    import sys
+    sys.modules["anthropic"] = fake_anthropic
+    import os
+    os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+
+    try:
+        with pytest.raises(RuntimeError, match="empty response"):
+            content._call_anthropic("テスト", {"model_id": "test-model"})
+    finally:
+        sys.modules.pop("anthropic", None)
+
+
+def test_openai_empty_choices_raises():
+    """Empty choices[] from OpenAI raises RuntimeError (not IndexError)."""
+    fake_response = MagicMock()
+    fake_response.choices = []
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+
+    import types
+    fake_openai = types.ModuleType("openai")
+    fake_openai.OpenAI = MagicMock(return_value=fake_client)
+    fake_openai.RateLimitError = Exception
+    fake_openai.APIError = Exception
+
+    import sys
+    sys.modules["openai"] = fake_openai
+    import os
+    os.environ.setdefault("OPENAI_API_KEY", "test-key")
+
+    try:
+        with pytest.raises(RuntimeError, match="empty response"):
+            content._call_openai("テスト", {"model_id": "gpt-4o-mini"})
+    finally:
+        sys.modules.pop("openai", None)

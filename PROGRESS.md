@@ -1,6 +1,83 @@
 # PROGRESS
 
-## Status: All milestones complete — 39/39 tests green
+## Status: All milestones complete — 77/77 tests green
+
+---
+
+## Completed this run (run 8)
+
+### Hardening: safer LLM response parsing in `content.py`
+
+Both LLM provider branches previously used bare index access on the response, which
+would raise an opaque `IndexError` on an empty response from the API (rare but possible
+during outages or quota resets):
+
+- `_call_anthropic`: `message.content[0].text` raised `IndexError` if Anthropic returned zero
+  content blocks.
+- `_call_openai`: `response.choices[0].message.content` raised `IndexError` if OpenAI
+  returned an empty choices list.
+
+Both are now guarded with an explicit check that raises a `RuntimeError` with a clear
+diagnostic message before indexing:
+
+```python
+# Anthropic
+if not message.content:
+    raise RuntimeError("Anthropic returned an empty response (no content blocks).")
+
+# OpenAI
+if not response.choices:
+    raise RuntimeError("OpenAI returned an empty response (no choices).")
+```
+
+This surfaces as a logged error per-store in `main.py` rather than an unhandled crash.
+
+### New tests: direct coverage for previously untested modules
+
+Three modules — `auth.py`, `business_profile.py`, and `drive.py` — were only covered
+indirectly via mocks in `test_posts.py` / `test_reviews.py`. Direct test files are now
+added:
+
+#### `tests/test_auth.py` (9 new tests)
+
+| Test | What it covers |
+|---|---|
+| `test_require_env_returns_value` | Returns value when env var is set |
+| `test_require_env_raises_when_missing` | Raises `EnvironmentError` for absent var |
+| `test_require_env_raises_when_empty` | Empty string treated as missing |
+| `test_get_credentials_raises_missing_client_id` | Missing `GOOGLE_CLIENT_ID` → clear error |
+| `test_get_credentials_raises_missing_client_secret` | Missing `GOOGLE_CLIENT_SECRET` → clear error |
+| `test_get_credentials_raises_missing_refresh_token` | Missing `GOOGLE_REFRESH_TOKEN` → clear error |
+| `test_get_credentials_builds_and_refreshes` | Builds `Credentials` with correct args; calls `refresh()` |
+| `test_scopes_include_business_manage` | Scope list contains Business Profile scope |
+| `test_scopes_include_drive_readonly` | Scope list contains Drive read-only scope |
+
+#### `tests/test_business_profile.py` (16 new tests)
+
+| Class | Tests |
+|---|---|
+| `TestCreateLocalPost` | POST body, media attachment, no-media case, CTA field, HTTP error |
+| `TestUploadMediaBytes` | Returns `googleUrl`; falls back to `sourceUrl`; raises when no URL; sends multipart header |
+| `TestListReviews` | Returns reviews; handles empty; follows pagination with `pageToken` |
+| `TestReplyToReview` | PUT body contains `comment`; URL includes review ID |
+| `TestAuthSessionHeaders` | Injects Bearer token; merges caller headers; triggers `refresh()` when creds invalid |
+
+#### `tests/test_drive.py` (9 new tests)
+
+| Class | Tests |
+|---|---|
+| `TestListImages` | Returns files; empty folder; query contains folder + MIME filter; follows pagination; includes required fields |
+| `TestPickRandomImage` | `None` for empty folder; returns image from list; single-image folder |
+| `TestDownloadImage` | Returns correct bytes; passes `fileId` to `get_media` |
+
+#### `tests/test_content.py` (2 new tests)
+
+| Test | What it covers |
+|---|---|
+| `test_anthropic_empty_content_raises` | Empty `content[]` → `RuntimeError` (not `IndexError`) |
+| `test_openai_empty_choices_raises` | Empty `choices[]` → `RuntimeError` (not `IndexError`) |
+
+**Total: 77/77 tests** (was 39).
 
 ---
 
