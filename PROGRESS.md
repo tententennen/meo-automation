@@ -1,6 +1,69 @@
 # PROGRESS
 
-## Status: All milestones complete — 39/39 tests green
+## Status: All milestones complete — 68/68 tests green
+
+---
+
+## Completed this run (run 8)
+
+### Feature: image rotation — avoid re-posting the same Drive photo
+
+**Problem**: `drive.pick_random_image()` was purely random. With a small photo
+library (e.g. 3–5 images), the same image could easily be posted on consecutive
+days, which looks repetitive to customers viewing the Google Business Profile.
+
+**Fix**: The last `_IMAGE_HISTORY_SIZE` (default: 5) Drive file IDs that were
+attached to posts are now tracked in `logs/state.json` under `"recent_images"`.
+Before each post, `pick_random_image()` receives that list and prefers images
+*not* in it; if the entire folder has been recently used, any image is returned
+so posts always go out.
+
+Key changes:
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | Added `record_image(store_key, file_id)` and `get_recent_images(store_key)` plus `_IMAGE_HISTORY_SIZE = 5` constant |
+| `src/meo/drive.py` | `pick_random_image(folder_id, *, recent_ids=None)` — new keyword-only arg; backward-compatible (callers omitting it get the old behaviour) |
+| `src/meo/posts.py` | Calls `get_recent_images(store_key)` before image selection; calls `record_image(store_key, file_id)` after a successful live post |
+
+### New test files: `test_drive.py` and `test_business_profile.py`
+
+`drive.py` and `business_profile.py` had zero direct unit tests (they were only
+exercised indirectly via `test_posts.py` and `test_reviews.py`).
+
+**`tests/test_drive.py`** (9 new tests):
+- `list_images`: returns files, returns empty list, handles pagination
+- `pick_random_image`: basic, empty folder, prefers fresh over recent, fallback when all recent, ignores empty `recent_ids` list
+- `download_image`: returns bytes from the authenticated Drive API
+
+**`tests/test_business_profile.py`** (14 new tests):
+- `create_local_post`: returns resource, correct body fields (`topicType`, `languageCode`), attaches media URL, omits media field when None
+- `upload_media_bytes`: returns `googleUrl`, falls back to `sourceUrl`, raises when no URL in response, sends `multipart/related` Content-Type
+- `list_reviews`: returns all reviews, returns empty list, handles pagination
+- `reply_to_review`: sends correct `comment` body field
+- `_AuthSession._auth_headers`: injects Bearer token, merges caller-supplied headers
+
+### New image-rotation tests in `test_state.py` (+6 tests)
+
+| Test | What it covers |
+|---|---|
+| `test_get_recent_images_empty_when_no_history` | Returns `[]` before any image is recorded |
+| `test_record_image_persists_and_is_retrievable` | Basic write/read round-trip |
+| `test_record_image_most_recent_is_first` | Ordering: most recently used ID is at index 0 |
+| `test_record_image_history_capped_at_limit` | Oldest IDs are evicted once `_IMAGE_HISTORY_SIZE` is reached |
+| `test_record_image_deduplicates_on_reuse` | Re-recording an existing ID moves it to the front, no duplicates |
+| `test_image_history_independent_per_store` | Store A's history does not affect store B |
+
+### Updated `test_posts.py`
+
+Live-path tests now also patch `meo.posts.get_recent_images` (→ `[]`) and
+`meo.posts.record_image` (→ no-op) to keep tests hermetic. One new assertion
+in `test_live_run_downloads_and_uploads_image` verifies
+`record_image` is called with the correct store key and file ID. One new
+assertion in `test_no_image_posts_without_photo` verifies `record_image`
+is NOT called when no image is available.
+
+Total: **68/68 tests** (was 39).
 
 ---
 

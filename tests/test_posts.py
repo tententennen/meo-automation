@@ -50,7 +50,9 @@ def test_live_run_downloads_and_uploads_image():
     gbp, drive, post_text = _make_mocks()
     with patch("meo.posts.generate_post", return_value=post_text), \
          patch("meo.posts.should_post_today", return_value=True), \
-         patch("meo.posts.record_post"):
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image") as mock_record_image:
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     drive.download_image.assert_called_once_with("img1")
@@ -61,6 +63,7 @@ def test_live_run_downloads_and_uploads_image():
     gbp.create_local_post.assert_called_once_with(
         _STORE["location_id"], post_text, _GBP_HOSTED_URL
     )
+    mock_record_image.assert_called_once_with(_STORE["key"], "img1")
     assert result["status"] == "posted"
 
 
@@ -70,7 +73,9 @@ def test_upload_failure_falls_back_to_web_content_link():
     gbp.upload_media_bytes.side_effect = Exception("GBP API unavailable")
     with patch("meo.posts.generate_post", return_value=post_text), \
          patch("meo.posts.should_post_today", return_value=True), \
-         patch("meo.posts.record_post"):
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     # Should still post using the webContentLink fallback
@@ -93,7 +98,9 @@ def test_upload_failure_no_fallback_posts_without_photo():
     }
     with patch("meo.posts.generate_post", return_value=post_text), \
          patch("meo.posts.should_post_today", return_value=True), \
-         patch("meo.posts.record_post"):
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     gbp.create_local_post.assert_called_once()
@@ -107,15 +114,18 @@ def test_no_image_posts_without_photo():
     drive.pick_random_image.return_value = None
     with patch("meo.posts.generate_post", return_value=post_text), \
          patch("meo.posts.should_post_today", return_value=True), \
-         patch("meo.posts.record_post"):
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image") as mock_record_image:
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     drive.download_image.assert_not_called()
     gbp.upload_media_bytes.assert_not_called()
-    # Should call create_local_post with None media_url
     gbp.create_local_post.assert_called_once()
     call_media_url = gbp.create_local_post.call_args.args[2]
     assert call_media_url is None
+    # No image was selected, so image history should not be updated
+    mock_record_image.assert_not_called()
     assert result["status"] == "posted"
 
 

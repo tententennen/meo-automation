@@ -67,12 +67,36 @@ class DriveClient:
         logger.info("Found %d images in Drive folder %s", len(results), folder_id)
         return results
 
-    def pick_random_image(self, folder_id: str) -> dict[str, Any] | None:
-        """Return metadata for a randomly selected image in the folder, or None."""
+    def pick_random_image(
+        self,
+        folder_id: str,
+        *,
+        recent_ids: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Return metadata for a randomly selected image in the folder, or None.
+
+        If recent_ids is provided, images whose ID appears in that list are
+        deprioritised: a fresh image is chosen at random from the remainder.
+        If every image in the folder has been recently used, any image is
+        returned (falls back to purely random selection so posts always go out).
+        """
         images = self.list_images(folder_id)
         if not images:
             logger.warning("No images found in Drive folder %s", folder_id)
             return None
+        if recent_ids:
+            recent = set(recent_ids)
+            fresh = [img for img in images if img["id"] not in recent]
+            if fresh:
+                logger.debug(
+                    "Picking from %d fresh image(s) (skipping %d recently used) in folder %s",
+                    len(fresh), len(images) - len(fresh), folder_id,
+                )
+                return random.choice(fresh)
+            logger.info(
+                "All %d image(s) in folder %s recently used; picking any at random.",
+                len(images), folder_id,
+            )
         return random.choice(images)
 
     def download_image(self, file_id: str) -> bytes:

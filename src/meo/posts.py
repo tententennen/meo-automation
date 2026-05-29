@@ -20,7 +20,7 @@ from . import config as cfg
 from .business_profile import BusinessProfileClient
 from .content import generate_post
 from .drive import DriveClient
-from .state import record_post, should_post_today
+from .state import get_recent_images, record_image, record_post, should_post_today
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,9 @@ def run_post_for_store(
     post_text = generate_post(store)
     logger.info("[%s] Post text (%d chars): %s", store_key, len(post_text), post_text[:80])
 
-    # --- Image selection ---
-    image_meta = drive.pick_random_image(folder_id)
+    # --- Image selection (prefer images not used recently) ---
+    recent_image_ids = get_recent_images(store_key)
+    image_meta = drive.pick_random_image(folder_id, recent_ids=recent_image_ids)
     media_url: str | None = None
 
     if image_meta:
@@ -109,4 +110,6 @@ def run_post_for_store(
     # --- Live post ---
     result = gbp.create_local_post(location_id, post_text, media_url)
     record_post(store_key)
+    if image_meta:
+        record_image(store_key, image_meta["id"])
     return {"store_key": store_key, "status": "posted", "post_name": result.get("name")}

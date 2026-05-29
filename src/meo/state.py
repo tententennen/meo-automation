@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 _STATE_FILE = Path(__file__).resolve().parents[3] / "logs" / "state.json"
 
+# How many recently-used Drive image IDs to remember per store.
+# Images in this list are deprioritised by drive.pick_random_image so that
+# the same photo is not posted on consecutive days.
+_IMAGE_HISTORY_SIZE = 5
+
 # Dates are anchored to JST (UTC+9) because the business and its "daily" cadence
 # are in Japan. The GitHub Actions scheduler runs at 0 UTC = 9 AM JST, but
 # manual workflow_dispatch triggers can fire at any UTC hour — using UTC dates
@@ -75,3 +80,33 @@ def record_post(store_key: str) -> None:
     state.setdefault("last_post", {})[store_key] = today.isoformat()
     _save(state)
     logger.debug("Recorded post date for %s: %s", store_key, today.isoformat())
+
+
+# ---------------------------------------------------------------------------
+# Image rotation helpers
+# ---------------------------------------------------------------------------
+
+def record_image(store_key: str, file_id: str) -> None:
+    """Record that file_id was used for a post for store_key.
+
+    Keeps the most recent _IMAGE_HISTORY_SIZE IDs so drive.pick_random_image
+    can avoid repeating the same photo on consecutive days.
+    """
+    state = _load()
+    history: list[str] = (
+        state.setdefault("recent_images", {}).setdefault(store_key, [])
+    )
+    if file_id in history:
+        history.remove(file_id)
+    history.insert(0, file_id)
+    state["recent_images"][store_key] = history[:_IMAGE_HISTORY_SIZE]
+    _save(state)
+    logger.debug("Recorded image use for %s: %s", store_key, file_id)
+
+
+def get_recent_images(store_key: str) -> list[str]:
+    """Return recently-used Drive image file IDs for store_key (most recent first).
+
+    Returns an empty list if no history exists.
+    """
+    return list(_load().get("recent_images", {}).get(store_key, []))

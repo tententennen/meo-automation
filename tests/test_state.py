@@ -80,3 +80,47 @@ def test_record_post_persists_today(frozen_today):
     state_mod.record_post("store_x")
     raw = json.loads(state_mod._STATE_FILE.read_text())
     assert raw["last_post"]["store_x"] == _FIXED_TODAY.isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Image rotation tests
+# ---------------------------------------------------------------------------
+
+def test_get_recent_images_empty_when_no_history():
+    assert state_mod.get_recent_images("my_store") == []
+
+
+def test_record_image_persists_and_is_retrievable():
+    state_mod.record_image("my_store", "file_abc")
+    assert state_mod.get_recent_images("my_store") == ["file_abc"]
+
+
+def test_record_image_most_recent_is_first():
+    state_mod.record_image("my_store", "file_001")
+    state_mod.record_image("my_store", "file_002")
+    recent = state_mod.get_recent_images("my_store")
+    assert recent[0] == "file_002"
+    assert recent[1] == "file_001"
+
+
+def test_record_image_history_capped_at_limit():
+    limit = state_mod._IMAGE_HISTORY_SIZE
+    for i in range(limit + 3):
+        state_mod.record_image("my_store", f"file_{i:03d}")
+    recent = state_mod.get_recent_images("my_store")
+    assert len(recent) == limit
+    assert recent[0] == f"file_{limit + 2:03d}"
+
+
+def test_record_image_deduplicates_on_reuse():
+    state_mod.record_image("my_store", "file_A")
+    state_mod.record_image("my_store", "file_B")
+    state_mod.record_image("my_store", "file_A")  # re-use A
+    recent = state_mod.get_recent_images("my_store")
+    assert recent[0] == "file_A"
+    assert recent.count("file_A") == 1
+
+
+def test_image_history_independent_per_store():
+    state_mod.record_image("store_a", "file_X")
+    assert state_mod.get_recent_images("store_b") == []
