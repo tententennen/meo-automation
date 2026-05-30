@@ -1,6 +1,42 @@
 # PROGRESS
 
-## Status: All milestones complete — 68/68 tests green
+## Status: All milestones complete — 79/79 tests green
+
+---
+
+## Completed this run (run 9)
+
+### Feature: post theme rotation — avoid repeating the same content angle
+
+**Problem**: `generate_post()` always passed the full theme list to the LLM,
+which could pick the same theme (e.g. 季節のお手入れ情報) on consecutive days.
+With only 4 themes per store this made the Google Business Profile feel
+repetitive, mirroring the image-repetition problem solved in run 8.
+
+**Fix**: The last `_THEME_HISTORY_SIZE` (default: 4) post themes are tracked in
+`logs/state.json` under `"recent_themes"`. Before each post, `_pick_theme()`
+(in `posts.py`) picks a theme not in that list; if every theme has been recently
+used, any theme is allowed so posts never stall. The chosen theme is passed as
+`forced_theme` to `generate_post()`, which writes an explicit-theme prompt to the
+LLM instead of asking it to pick from a candidate list.
+
+Key changes:
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | `_THEME_HISTORY_SIZE = 4`; `record_theme(store_key, theme)`; `get_recent_themes(store_key)` |
+| `src/meo/content.py` | `generate_post(store, *, forced_theme=None)` — new keyword-only arg; explicit-theme prompt branch when `forced_theme` is given; no-theme branch unchanged (backward-compatible) |
+| `src/meo/posts.py` | `_pick_theme(store_key, themes)` helper; calls `get_recent_themes()` before `generate_post()`; passes `forced_theme=chosen_theme`; calls `record_theme()` after a successful live post; dry-run path logs the chosen theme without writing state; result dict gains `"theme"` key |
+
+### New tests (+11 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_state.py` | 6 tests mirroring the image-rotation suite: empty history, persist/retrieve, ordering, cap at limit, deduplication, per-store isolation |
+| `tests/test_content.py` | `forced_theme` appears in prompt and suppresses candidate list; no-`forced_theme` path lists all themes |
+| `tests/test_posts.py` | `forced_theme` forwarded to `generate_post`; `record_theme` called after live post; `record_theme` NOT called on dry run; 4 existing live-path tests hardened with `get_recent_themes` / `record_theme` patches |
+
+Total: **79/79 tests** (was 68).
 
 ---
 
