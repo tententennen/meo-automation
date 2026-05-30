@@ -14,15 +14,37 @@ the webContentLink from Drive is tried as a fallback (works only for public file
 from __future__ import annotations
 
 import logging
+import random
 from typing import Any
 
 from . import config as cfg
 from .business_profile import BusinessProfileClient
 from .content import generate_post
 from .drive import DriveClient
-from .state import get_recent_images, record_image, record_post, should_post_today
+from .state import (
+    get_recent_images,
+    get_recent_themes,
+    record_image,
+    record_post,
+    record_theme,
+    should_post_today,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _pick_theme(store_key: str, themes: list[str]) -> str | None:
+    """Pick a post theme, preferring ones not used in recent posts.
+
+    Falls back to the full theme list when every theme has been recently used,
+    so posts are never blocked even with small theme libraries.
+    Returns None when themes is empty.
+    """
+    if not themes:
+        return None
+    recent = get_recent_themes(store_key)
+    available = [t for t in themes if t not in recent]
+    return random.choice(available if available else themes)
 
 
 def run_post_for_store(
@@ -61,8 +83,19 @@ def run_post_for_store(
         )
         return {"store_key": store_key, "status": "skipped"}
 
+    # --- Theme selection (prefer themes not used recently) ---
+    content_conf = cfg.content()
+    industry = store.get("industry", "beauty_salon")
+    tone_profile = content_conf["industry_tones"].get(
+        industry, content_conf["industry_tones"]["beauty_salon"]
+    )
+    themes: list[str] = tone_profile.get("themes", [])
+    chosen_theme = _pick_theme(store_key, themes)
+    if chosen_theme:
+        logger.info("[%s] Selected theme: %s", store_key, chosen_theme)
+
     logger.info("[%s] Generating post text...", store_key)
-    post_text = generate_post(store)
+    post_text = generate_post(store, forced_theme=chosen_theme)
     logger.info("[%s] Post text (%d chars): %s", store_key, len(post_text), post_text[:80])
 
     # --- Image selection (prefer images not used recently) ---
@@ -100,16 +133,29 @@ def run_post_for_store(
     # --- Dry run ---
     if dry_run:
         logger.info(
-            "[%s] DRY RUN — would post:\n%s\nImage: %s",
+            "[%s] DRY RUN — would post:\n%s\nTheme: %s\nImage: %s",
             store_key,
             post_text,
+            chosen_theme or "LLM choice",
             image_meta.get("name") if image_meta else "none",
         )
-        return {"store_key": store_key, "status": "dry_run", "post_text": post_text}
+        return {
+            "store_key": store_key,
+            "status": "dry_run",
+            "post_text": post_text,
+            "theme": chosen_theme,
+        }
 
     # --- Live post ---
     result = gbp.create_local_post(location_id, post_text, media_url)
     record_post(store_key)
     if image_meta:
         record_image(store_key, image_meta["id"])
-    return {"store_key": store_key, "status": "posted", "post_name": result.get("name")}
+    if chosen_theme:
+        record_theme(store_key, chosen_theme)
+    return {
+        "store_key": store_key,
+        "status": "posted",
+        "post_name": result.get("name"),
+        "theme": chosen_theme,
+    }

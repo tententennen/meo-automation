@@ -51,8 +51,10 @@ def test_live_run_downloads_and_uploads_image():
     with patch("meo.posts.generate_post", return_value=post_text), \
          patch("meo.posts.should_post_today", return_value=True), \
          patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
          patch("meo.posts.record_post"), \
-         patch("meo.posts.record_image") as mock_record_image:
+         patch("meo.posts.record_image") as mock_record_image, \
+         patch("meo.posts.record_theme"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     drive.download_image.assert_called_once_with("img1")
@@ -74,8 +76,10 @@ def test_upload_failure_falls_back_to_web_content_link():
     with patch("meo.posts.generate_post", return_value=post_text), \
          patch("meo.posts.should_post_today", return_value=True), \
          patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
          patch("meo.posts.record_post"), \
-         patch("meo.posts.record_image"):
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     # Should still post using the webContentLink fallback
@@ -99,8 +103,10 @@ def test_upload_failure_no_fallback_posts_without_photo():
     with patch("meo.posts.generate_post", return_value=post_text), \
          patch("meo.posts.should_post_today", return_value=True), \
          patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
          patch("meo.posts.record_post"), \
-         patch("meo.posts.record_image"):
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     gbp.create_local_post.assert_called_once()
@@ -115,8 +121,10 @@ def test_no_image_posts_without_photo():
     with patch("meo.posts.generate_post", return_value=post_text), \
          patch("meo.posts.should_post_today", return_value=True), \
          patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
          patch("meo.posts.record_post"), \
-         patch("meo.posts.record_image") as mock_record_image:
+         patch("meo.posts.record_image") as mock_record_image, \
+         patch("meo.posts.record_theme"):
         result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
 
     drive.download_image.assert_not_called()
@@ -149,4 +157,57 @@ def test_dry_run_bypasses_cadence_check():
         result = run_post_for_store(_STORE, gbp, drive, dry_run=True)
 
     # In dry-run mode the cadence guard is bypassed
+    assert result["status"] == "dry_run"
+
+
+# ---------------------------------------------------------------------------
+# Theme rotation tests
+# ---------------------------------------------------------------------------
+
+def test_live_run_passes_forced_theme_to_generate_post():
+    """generate_post() must always receive a forced_theme kwarg on the live path."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text) as mock_gen, \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    call_kwargs = mock_gen.call_args.kwargs
+    # A theme must have been picked and forwarded
+    assert "forced_theme" in call_kwargs
+    assert isinstance(call_kwargs["forced_theme"], str)
+    assert len(call_kwargs["forced_theme"]) > 0
+
+
+def test_live_run_records_theme_after_successful_post():
+    """record_theme() must be called with the store key and chosen theme."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme") as mock_record_theme:
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    mock_record_theme.assert_called_once()
+    args = mock_record_theme.call_args.args
+    assert args[0] == _STORE["key"]
+    assert isinstance(args[1], str)
+
+
+def test_dry_run_does_not_record_theme():
+    """Dry run must not write any theme to state."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_theme") as mock_record_theme:
+        result = run_post_for_store(_STORE, gbp, drive, dry_run=True)
+
+    mock_record_theme.assert_not_called()
     assert result["status"] == "dry_run"

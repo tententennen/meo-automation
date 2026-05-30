@@ -124,3 +124,47 @@ def test_record_image_deduplicates_on_reuse():
 def test_image_history_independent_per_store():
     state_mod.record_image("store_a", "file_X")
     assert state_mod.get_recent_images("store_b") == []
+
+
+# ---------------------------------------------------------------------------
+# Theme rotation tests
+# ---------------------------------------------------------------------------
+
+def test_get_recent_themes_empty_when_no_history():
+    assert state_mod.get_recent_themes("my_store") == []
+
+
+def test_record_theme_persists_and_is_retrievable():
+    state_mod.record_theme("my_store", "季節のお手入れ情報")
+    assert state_mod.get_recent_themes("my_store") == ["季節のお手入れ情報"]
+
+
+def test_record_theme_most_recent_is_first():
+    state_mod.record_theme("my_store", "スタッフ紹介")
+    state_mod.record_theme("my_store", "新メニュー・クラス紹介")
+    recent = state_mod.get_recent_themes("my_store")
+    assert recent[0] == "新メニュー・クラス紹介"
+    assert recent[1] == "スタッフ紹介"
+
+
+def test_record_theme_history_capped_at_limit():
+    limit = state_mod._THEME_HISTORY_SIZE
+    for i in range(limit + 2):
+        state_mod.record_theme("my_store", f"テーマ_{i}")
+    recent = state_mod.get_recent_themes("my_store")
+    assert len(recent) == limit
+    assert recent[0] == f"テーマ_{limit + 1}"
+
+
+def test_record_theme_deduplicates_on_reuse():
+    state_mod.record_theme("my_store", "テーマA")
+    state_mod.record_theme("my_store", "テーマB")
+    state_mod.record_theme("my_store", "テーマA")  # re-use A
+    recent = state_mod.get_recent_themes("my_store")
+    assert recent[0] == "テーマA"
+    assert recent.count("テーマA") == 1
+
+
+def test_theme_history_independent_per_store():
+    state_mod.record_theme("store_a", "テーマX")
+    assert state_mod.get_recent_themes("store_b") == []

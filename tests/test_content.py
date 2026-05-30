@@ -86,3 +86,29 @@ def test_call_llm_openai_provider():
         assert result == "OpenAI生成テキスト"
     finally:
         sys.modules.pop("openai", None)
+
+
+def test_generate_post_with_forced_theme_includes_it_in_prompt():
+    """When forced_theme is given the LLM prompt should name it explicitly."""
+    theme = "季節のお手入れ情報"
+    with patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE, forced_theme=theme)
+    user_prompt = mock_llm.call_args.args[0]
+    assert theme in user_prompt
+    # Explicit-theme path must NOT list multiple theme candidates
+    assert "テーマ候補" not in user_prompt
+
+
+def test_generate_post_without_forced_theme_lists_all_themes():
+    """When forced_theme is omitted all configured themes appear in the prompt."""
+    from meo import config as cfg
+    conf = cfg.content()
+    industry = _STORE.get("industry", "beauty_salon")
+    expected_themes = conf["industry_tones"][industry]["themes"]
+
+    with patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "テーマ候補" in user_prompt
+    for t in expected_themes:
+        assert t in user_prompt

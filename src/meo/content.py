@@ -23,12 +23,16 @@ from . import config as cfg
 logger = logging.getLogger(__name__)
 
 
-def generate_post(store: dict[str, Any]) -> str:
+def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> str:
     """Generate a Japanese 最新情報 post body for the given store.
 
     Args:
-        store: A store dict from config.store_list() — must have 'name',
-               'industry', and 'key' fields.
+        store:        A store dict from config.store_list() — must have 'name',
+                      'industry', and 'key' fields.
+        forced_theme: If provided, the LLM writes about this specific theme
+                      rather than choosing from the full list.  Callers should
+                      pass the value returned by posts._pick_theme() to ensure
+                      content variety across consecutive posts.
 
     Returns:
         Post body string (Japanese, within max_post_chars from content.yaml).
@@ -44,19 +48,35 @@ def generate_post(store: dict[str, Any]) -> str:
         f"店舗のブランドイメージを大切にし、読者に自然に響く日本語の投稿文を生成します。"
         f"指示がない限り、説明文や前置き、マークダウンは一切含めず、投稿文のみを出力してください。"
     )
-    user = (
-        f"店舗名: {store['name']}\n"
-        f"トーン: {tone_profile['tone']}\n"
-        f"テーマ候補: {', '.join(tone_profile['themes'])}\n"
-        f"禁止ワード: {banned}\n"
-        f"条件:\n"
-        f"- 日本語で書く\n"
-        f"- {max_chars}文字以内\n"
-        f"- ハッシュタグは不要\n"
-        f"- お客様への呼びかけを含める\n"
-        f"- テーマ候補から1つ選び、自然な投稿文を1つだけ出力する\n"
-        f"投稿文のみを出力してください（説明文不要）。"
-    )
+
+    if forced_theme:
+        user = (
+            f"店舗名: {store['name']}\n"
+            f"トーン: {tone_profile['tone']}\n"
+            f"テーマ: {forced_theme}\n"
+            f"禁止ワード: {banned}\n"
+            f"条件:\n"
+            f"- 日本語で書く\n"
+            f"- {max_chars}文字以内\n"
+            f"- ハッシュタグは不要\n"
+            f"- お客様への呼びかけを含める\n"
+            f"- 指定されたテーマで自然な投稿文を1つだけ出力する\n"
+            f"投稿文のみを出力してください（説明文不要）。"
+        )
+    else:
+        user = (
+            f"店舗名: {store['name']}\n"
+            f"トーン: {tone_profile['tone']}\n"
+            f"テーマ候補: {', '.join(tone_profile['themes'])}\n"
+            f"禁止ワード: {banned}\n"
+            f"条件:\n"
+            f"- 日本語で書く\n"
+            f"- {max_chars}文字以内\n"
+            f"- ハッシュタグは不要\n"
+            f"- お客様への呼びかけを含める\n"
+            f"- テーマ候補から1つ選び、自然な投稿文を1つだけ出力する\n"
+            f"投稿文のみを出力してください（説明文不要）。"
+        )
 
     text = _call_llm(user, conf["llm"], system=system)
     text = text.strip()

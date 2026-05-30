@@ -1,11 +1,10 @@
-"""Per-store run-state tracking — prevents duplicate posts on the same day.
+"""Per-store run-state tracking — prevents duplicate posts and tracks rotation history.
 
 State is stored in logs/state.json as a simple JSON object:
   {
-    "last_post": {
-      "the_body_kyoto": "2024-01-15",
-      ...
-    }
+    "last_post":     {"the_body_kyoto": "2024-01-15", ...},
+    "recent_images": {"the_body_kyoto": ["file_id_1", "file_id_2"], ...},
+    "recent_themes": {"the_body_kyoto": ["季節のお手入れ情報", ...], ...}
   }
 
 This file is NOT committed to git (covered by .gitignore logs/).
@@ -110,3 +109,39 @@ def get_recent_images(store_key: str) -> list[str]:
     Returns an empty list if no history exists.
     """
     return list(_load().get("recent_images", {}).get(store_key, []))
+
+
+# ---------------------------------------------------------------------------
+# Theme rotation helpers
+# ---------------------------------------------------------------------------
+
+# How many recently-used post themes to remember per store.
+# Themes in this list are deprioritised by posts._pick_theme so that
+# the same content angle is not repeated on consecutive posts.
+_THEME_HISTORY_SIZE = 4
+
+
+def record_theme(store_key: str, theme: str) -> None:
+    """Record that theme was used in a post for store_key.
+
+    Keeps the most recent _THEME_HISTORY_SIZE themes so posts._pick_theme
+    can avoid repeating the same content angle on consecutive days.
+    """
+    state = _load()
+    history: list[str] = (
+        state.setdefault("recent_themes", {}).setdefault(store_key, [])
+    )
+    if theme in history:
+        history.remove(theme)
+    history.insert(0, theme)
+    state["recent_themes"][store_key] = history[:_THEME_HISTORY_SIZE]
+    _save(state)
+    logger.debug("Recorded theme for %s: %s", store_key, theme)
+
+
+def get_recent_themes(store_key: str) -> list[str]:
+    """Return recently-used post themes for store_key (most recent first).
+
+    Returns an empty list if no history exists.
+    """
+    return list(_load().get("recent_themes", {}).get(store_key, []))
