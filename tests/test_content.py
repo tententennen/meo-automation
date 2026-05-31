@@ -1,7 +1,9 @@
 """Tests for AI content generation — mocks the LLM so no API key is needed."""
 
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 import pytest
+from zoneinfo import ZoneInfo
 
 from meo import content, config as cfg
 
@@ -112,3 +114,64 @@ def test_generate_post_without_forced_theme_lists_all_themes():
     assert "テーマ候補" in user_prompt
     for t in expected_themes:
         assert t in user_prompt
+
+
+# ---------------------------------------------------------------------------
+# _season() tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("month,expected", [
+    (3, "春"), (4, "春"), (5, "春"),
+    (6, "夏"), (7, "夏"), (8, "夏"),
+    (9, "秋"), (10, "秋"), (11, "秋"),
+    (12, "冬"), (1, "冬"), (2, "冬"),
+])
+def test_season_mapping(month, expected):
+    assert content._season(month) == expected
+
+
+# ---------------------------------------------------------------------------
+# Date/season context injection tests
+# ---------------------------------------------------------------------------
+
+def _frozen_jst(year: int, month: int, day: int):
+    """Return a patcher that freezes _jst_date_context() to a known string."""
+    fixed = f"{year}年{month}月{day}日（{content._season(month)}）"
+    return patch("meo.content._jst_date_context", return_value=fixed), fixed
+
+
+def test_generate_post_includes_date_context():
+    """generate_post() must inject the current date/season into the user prompt."""
+    patcher, fixed_ctx = _frozen_jst(2026, 5, 31)
+    with patcher, patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert fixed_ctx in user_prompt
+
+
+def test_generate_post_forced_theme_also_includes_date_context():
+    """Date context must appear even when a forced_theme is supplied."""
+    patcher, fixed_ctx = _frozen_jst(2026, 12, 1)
+    with patcher, patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE, forced_theme="季節のお手入れ情報")
+    user_prompt = mock_llm.call_args.args[0]
+    assert fixed_ctx in user_prompt
+
+
+def test_generate_reply_includes_date_context():
+    """generate_reply() must inject the current date/season into the user prompt."""
+    patcher, fixed_ctx = _frozen_jst(2026, 8, 15)
+    with patcher, patch("meo.content._call_llm", return_value="ありがとうございます") as mock_llm:
+        content.generate_reply(_REVIEW, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert fixed_ctx in user_prompt
+
+
+def test_jst_date_context_contains_year_and_season():
+    """_jst_date_context() returns a string containing year and parenthesised season."""
+    ctx = content._jst_date_context()
+    assert "年" in ctx
+    assert "月" in ctx
+    assert "日" in ctx
+    # One of the four seasons must appear in parentheses
+    assert any(s in ctx for s in ("（春）", "（夏）", "（秋）", "（冬）"))

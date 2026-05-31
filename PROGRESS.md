@@ -1,6 +1,66 @@
 # PROGRESS
 
-## Status: All milestones complete — 79/79 tests green
+## Status: All milestones complete — 95/95 tests green
+
+---
+
+## Completed this run (run 10)
+
+### Feature: seasonal/date context in LLM prompts
+
+**Problem**: `generate_post()` and `generate_reply()` sent no date or season
+information to the LLM.  For a beauty salon / fitness studio in Japan, seasonal
+relevance matters: spring UV care, summer sweat-reduction, autumn moisturising,
+winter hand care.  Without the date, the LLM produced generic copy that read the
+same any time of year.
+
+**Fix**: Added three helpers to `content.py`:
+
+| Helper | Purpose |
+|---|---|
+| `_season(month)` | Maps calendar month (1–12) → Japanese season name (春/夏/秋/冬) |
+| `_jst_date_context()` | Returns `"2026年5月31日（春）"` — current JST date + season |
+
+Both `generate_post()` and `generate_reply()` now inject
+`現在の日付・季節: {date_context}` into their user prompts, and add the
+instruction `季節感を自然に反映させる` / `必要に応じて季節のご挨拶を添える`.
+This is backward-compatible — the forced_theme path also receives the date context.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/content.py` | `_JST`, `_season()`, `_jst_date_context()` helpers; date context injected into both prompts |
+
+### New operator tool: `tools/status.py`
+
+`python -m meo.tools.status` (or `meo-status` after `pip install -e .`) prints
+a human-readable summary of the tool's readiness:
+
+- **Environment** — which of the four required env vars are set (values hidden)
+- **Stores** — per-store config completeness (`location_id`, `drive_folder_id`),
+  last post date + how many days ago, recent-image and recent-theme counts
+- **Content config** — LLM provider, model, cadence, limits
+- **State file** — path and size
+- **Summary** — how many stores are fully configured, what to do next
+
+Exit code 0 if everything is ready; exit code 1 if any store or env var is
+missing (useful for CI pre-flight checks).
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/status.py` | New module |
+| `pyproject.toml` | Added `meo-status` script entry point |
+
+### New tests (+16 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_content.py` | `test_season_mapping` ×12 (all months); `test_generate_post_includes_date_context`; `test_generate_post_forced_theme_also_includes_date_context`; `test_generate_reply_includes_date_context`; `test_jst_date_context_contains_year_and_season` |
+
+Total: **95/95 tests** (was 79).
 
 ---
 
@@ -586,13 +646,14 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (28/28).
+All code is complete and the test suite is green (95/95).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:
-1. Run `pytest` to confirm all 28 tests still pass.
-2. Run `python -m meo.main --store the_body_kyoto --dry-run` to verify single-store flow.
-3. Run `python -m meo.main --dry-run` for all stores.
-4. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
-5. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
-6. After the first live post, verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO in `business_profile.py` once confirmed.
+1. Run `python -m meo.tools.status` to check config + env var readiness.
+2. Run `pytest` to confirm all 95 tests still pass.
+3. Run `python -m meo.main --store the_body_kyoto --dry-run` to verify single-store flow.
+4. Run `python -m meo.main --dry-run` for all stores.
+5. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
+6. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
+7. After the first live post, verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO in `business_profile.py` once confirmed.

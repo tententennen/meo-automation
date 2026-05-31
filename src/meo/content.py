@@ -16,11 +16,35 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from . import config as cfg
 
 logger = logging.getLogger(__name__)
+
+_JST = ZoneInfo("Asia/Tokyo")
+
+
+def _season(month: int) -> str:
+    """Map a calendar month (1-12) to a Japanese season name."""
+    if month in (3, 4, 5):
+        return "春"
+    if month in (6, 7, 8):
+        return "夏"
+    if month in (9, 10, 11):
+        return "秋"
+    return "冬"
+
+
+def _jst_date_context() -> str:
+    """Return a formatted date/season string for LLM prompt injection.
+
+    Example: '2026年5月31日（春）'
+    """
+    now = datetime.now(tz=_JST)
+    return f"{now.year}年{now.month}月{now.day}日（{_season(now.month)}）"
 
 
 def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> str:
@@ -49,9 +73,12 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
         f"指示がない限り、説明文や前置き、マークダウンは一切含めず、投稿文のみを出力してください。"
     )
 
+    date_context = _jst_date_context()
+
     if forced_theme:
         user = (
             f"店舗名: {store['name']}\n"
+            f"現在の日付・季節: {date_context}\n"
             f"トーン: {tone_profile['tone']}\n"
             f"テーマ: {forced_theme}\n"
             f"禁止ワード: {banned}\n"
@@ -60,12 +87,14 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
             f"- {max_chars}文字以内\n"
             f"- ハッシュタグは不要\n"
             f"- お客様への呼びかけを含める\n"
+            f"- 季節感を自然に反映させる\n"
             f"- 指定されたテーマで自然な投稿文を1つだけ出力する\n"
             f"投稿文のみを出力してください（説明文不要）。"
         )
     else:
         user = (
             f"店舗名: {store['name']}\n"
+            f"現在の日付・季節: {date_context}\n"
             f"トーン: {tone_profile['tone']}\n"
             f"テーマ候補: {', '.join(tone_profile['themes'])}\n"
             f"禁止ワード: {banned}\n"
@@ -74,6 +103,7 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
             f"- {max_chars}文字以内\n"
             f"- ハッシュタグは不要\n"
             f"- お客様への呼びかけを含める\n"
+            f"- 季節感を自然に反映させる\n"
             f"- テーマ候補から1つ選び、自然な投稿文を1つだけ出力する\n"
             f"投稿文のみを出力してください（説明文不要）。"
         )
@@ -105,6 +135,7 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     reviewer_name = review.get("reviewer", {}).get("displayName", "お客様")
     star_rating = review.get("starRating", "FIVE")
     comment = review.get("comment", "")
+    date_context = _jst_date_context()
 
     system = (
         f"あなたは{store['name']}のオーナーとして、Googleレビューへ誠実かつ丁寧に返信するオーナーです。"
@@ -112,6 +143,7 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
         f"返信文のみを出力し、説明文や前置きは一切含めないでください。"
     )
     user = (
+        f"現在の日付・季節: {date_context}\n"
         f"禁止ワード: {banned}\n"
         f"レビュアー名: {reviewer_name}\n"
         f"評価: {star_rating}\n"
@@ -122,6 +154,7 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
         f"- 感謝の気持ちを伝える\n"
         f"- 低評価の場合は誠実にお詫びし、改善への意欲を示す\n"
         f"- 高評価の場合は喜びを表現し、また来てほしいと伝える\n"
+        f"- 必要に応じて季節のご挨拶を添える\n"
         f"返信文のみを出力してください（説明文不要）。"
     )
 
