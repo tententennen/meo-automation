@@ -40,15 +40,21 @@ meo-automation/
 
 All secrets come from environment variables — **never** committed to the repo.
 
-| Variable | Description |
-|---|---|
-| `GOOGLE_CLIENT_ID` | OAuth 2.0 client ID (Desktop type) from Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | OAuth 2.0 client secret |
-| `GOOGLE_REFRESH_TOKEN` | Refresh token (obtained once via `python -m meo.auth`) |
-| `ANTHROPIC_API_KEY` | Anthropic Claude API key — https://console.anthropic.com/ |
+| Variable | Required | Description |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | Yes | OAuth 2.0 client ID (Desktop type) from Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 client secret |
+| `GOOGLE_REFRESH_TOKEN` | Yes | Refresh token (obtained once via `python -m meo.auth`) |
+| `ANTHROPIC_API_KEY` | Yes | Anthropic Claude API key — https://console.anthropic.com/ |
+| `SLACK_WEBHOOK_URL` | No | Slack incoming webhook URL for run-completion notifications |
 
 For **development**, create a `.env` file (gitignored) with these values.
 For **production** (cron/GitHub Actions), set them as system/CI environment variables.
+
+`SLACK_WEBHOOK_URL` is optional — if unset, no notification is sent.
+Create an incoming webhook at https://api.slack.com/messaging/webhooks and add the
+URL as a GitHub Actions secret named `SLACK_WEBHOOK_URL` to receive a Slack message
+after each daily run.
 
 ---
 

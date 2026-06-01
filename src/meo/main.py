@@ -36,6 +36,7 @@ from . import config as cfg
 from .auth import get_credentials
 from .business_profile import BusinessProfileClient
 from .drive import DriveClient
+from .notify import send_run_summary
 from .posts import run_post_for_store
 from .reviews import run_reviews_for_store
 
@@ -160,6 +161,8 @@ def main() -> None:
     logger.info("=== Run complete. Results: ===")
     for r in all_results:
         logger.info("  %s: %s", r["store_key"], r)
+
+    send_run_summary(all_results, dry_run=args.dry_run)
 
     sys.exit(1 if had_error else 0)
 

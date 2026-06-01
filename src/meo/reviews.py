@@ -34,14 +34,15 @@ def run_reviews_for_store(
     logger.info("[%s] Fetching reviews...", store_key)
     reviews = gbp.list_reviews(location_id)
     unreplied = [r for r in reviews if not _has_reply(r)]
-    logger.info("[%s] %d unreplied review(s) of %d total.", store_key, len(unreplied), len(reviews))
+    unreplied_total = len(unreplied)  # save before the cap so skipped/deferred are accurate
+    logger.info("[%s] %d unreplied review(s) of %d total.", store_key, unreplied_total, len(reviews))
 
     max_replies: int = cfg.content()["defaults"].get("max_replies_per_run", 10)
-    if len(unreplied) > max_replies:
+    if unreplied_total > max_replies:
         logger.warning(
             "[%s] %d unreplied reviews found; capping at %d (max_replies_per_run). "
             "Remaining will be picked up in future runs.",
-            store_key, len(unreplied), max_replies,
+            store_key, unreplied_total, max_replies,
         )
         unreplied = unreplied[:max_replies]
 
@@ -70,7 +71,8 @@ def run_reviews_for_store(
     return {
         "store_key": store_key,
         "replied": replied,
-        "skipped": len(reviews) - len(unreplied),
+        "skipped": len(reviews) - unreplied_total,   # already-replied reviews
+        "deferred": unreplied_total - len(unreplied), # capped by max_replies_per_run
         "errors": errors,
     }
 

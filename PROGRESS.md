@@ -1,6 +1,82 @@
 # PROGRESS
 
-## Status: All milestones complete — 95/95 tests green
+## Status: All milestones complete — 109/109 tests green
+
+---
+
+## Completed this run (run 11)
+
+### Feature: Slack webhook run-completion notifications (`src/meo/notify.py`)
+
+**Problem**: The daily automation runs unattended in GitHub Actions.  When
+something goes wrong (post failed, review reply errored, a store was skipped
+because `location_id` is still a TODO), the owner had to check the Actions log
+manually to find out.
+
+**Fix**: Added an optional Slack incoming-webhook notification sent at the end
+of every run.  The message summarises, per store:
+- Post status + theme selected
+- Number of review replies sent / deferred to next run
+- Any per-store or per-review errors
+- A ✅ / ⚠️ footer line
+
+**Design decisions:**
+- **Opt-in via env var**: if `SLACK_WEBHOOK_URL` is not set the module is a
+  complete no-op — no error, no log noise, zero impact on existing runs.
+- **Non-fatal**: any network or HTTP error from the webhook is logged as
+  `WARNING` and swallowed; a broken Slack webhook never changes the process
+  exit code or blocks other stores.
+- **Pure summary module**: `notify.py` only reads result dicts; it has no
+  knowledge of the GBP/Drive APIs.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/notify.py` | New module: `send_run_summary()` + `_format_message()` |
+| `src/meo/main.py` | `send_run_summary(all_results, dry_run=args.dry_run)` at end of run |
+| `.github/workflows/daily_run.yml` | Passes `SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}` to run step |
+| `README.md` | Documents `SLACK_WEBHOOK_URL` as an optional env var |
+
+### Fix: `skipped` / `deferred` semantics in `reviews.py`
+
+**Problem**: `run_reviews_for_store()` returned `"skipped": len(reviews) -
+len(unreplied)` — but `unreplied` had already been truncated by the
+`max_replies_per_run` cap before the subtraction.  So with 20 total reviews, 15
+unreplied, and `max_replies_per_run=10`:
+
+```
+skipped = 20 - 10 = 10   # WRONG: 5 already-replied + 5 deferred mixed together
+```
+
+This made the summary log misleading and the `send_run_summary` Slack message
+would have shown the wrong numbers.
+
+**Fix**: Save `unreplied_total` **before** the cap, then compute:
+
+```python
+"skipped":  len(reviews) - unreplied_total,        # truly already-replied
+"deferred": unreplied_total - len(unreplied),       # capped; will retry next run
+```
+
+`deferred` is a new key — backward-compatible (callers checking only `replied`
+and `errors` are unaffected).  The Slack notification surfaces it when non-zero:
+`"replies: 10, 5 deferred"`.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/reviews.py` | `unreplied_total` saved before cap; `skipped` fixed; `deferred` key added |
+
+### New tests (+14 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_notify.py` | 13 new tests: `_format_message` content (header, store detail, deferred, errors, store-level error, skipped, no-actions); `send_run_summary` (no-op, posts, failure-safe, HTTP-error-safe, payload content) |
+| `tests/test_reviews.py` | `test_max_replies_per_run_limits_replies`: added `deferred==3` and `skipped==0` assertions; `test_skipped_counts_only_already_replied`: new test verifying correct separation of already-replied vs deferred |
+
+Total: **109/109 tests** (was 95).
 
 ---
 
@@ -609,15 +685,22 @@ copy the ID from the URL: `https://drive.google.com/drive/folders/{FOLDER_ID}`
 
 In the repo → **Settings → Secrets and variables → Actions**, add:
 
-| Secret name | Value |
-|---|---|
-| `GOOGLE_CLIENT_ID` | from Step 3 |
-| `GOOGLE_CLIENT_SECRET` | from Step 3 |
-| `GOOGLE_REFRESH_TOKEN` | from Step 4 |
-| `ANTHROPIC_API_KEY` | from Step 5 |
+| Secret name | Required | Value |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | Yes | from Step 3 |
+| `GOOGLE_CLIENT_SECRET` | Yes | from Step 3 |
+| `GOOGLE_REFRESH_TOKEN` | Yes | from Step 4 |
+| `ANTHROPIC_API_KEY` | Yes | from Step 5 |
+| `SLACK_WEBHOOK_URL` | No (recommended) | Slack incoming webhook URL for run-completion notifications |
 
 The daily workflow (`.github/workflows/daily_run.yml`) then runs automatically at 9 AM JST.
 You can also trigger it manually from the **Actions** tab with a dry-run option.
+
+**To set up Slack notifications** (optional but recommended):
+1. Go to https://api.slack.com/messaging/webhooks
+2. Create a new app → "Incoming Webhooks" → activate → add to workspace → choose a channel
+3. Copy the webhook URL and add it as `SLACK_WEBHOOK_URL` in GitHub Actions secrets
+4. After each daily run you will receive a message in that channel summarising what was posted
 
 ---
 
@@ -646,14 +729,15 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (95/95).
+All code is complete and the test suite is green (109/109).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:
 1. Run `python -m meo.tools.status` to check config + env var readiness.
-2. Run `pytest` to confirm all 95 tests still pass.
+2. Run `pytest` to confirm all 109 tests still pass.
 3. Run `python -m meo.main --store the_body_kyoto --dry-run` to verify single-store flow.
 4. Run `python -m meo.main --dry-run` for all stores.
 5. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
+   - `SLACK_WEBHOOK_URL` is optional but highly recommended so you get a Slack message after each run.
 6. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
 7. After the first live post, verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO in `business_profile.py` once confirmed.

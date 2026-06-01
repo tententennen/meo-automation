@@ -96,3 +96,38 @@ def test_max_replies_per_run_limits_replies():
     assert result["replied"] == 2
     assert mock_gen.call_count == 2
     assert gbp.reply_to_review.call_count == 2
+    # 5 unreplied total, cap=2 → 3 deferred to next run, 0 already-replied (skipped)
+    assert result["deferred"] == 3
+    assert result["skipped"] == 0
+
+
+def test_skipped_counts_only_already_replied():
+    """skipped must reflect already-replied reviews, not deferred ones."""
+    gbp = MagicMock()
+    already_replied = {
+        "name": "accounts/1/locations/1/reviews/rev999",
+        "reviewId": "rev999",
+        "reviewer": {"displayName": "既返信"},
+        "starRating": "FIVE",
+        "comment": "良い",
+        "reviewReply": {"comment": "ありがとう"},
+    }
+    unreplied_reviews = [
+        {
+            "name": f"accounts/1/locations/1/reviews/rev{i:03d}",
+            "reviewId": f"rev{i:03d}",
+            "reviewer": {"displayName": f"User{i}"},
+            "starRating": "FIVE",
+            "comment": f"Great! {i}",
+        }
+        for i in range(4)
+    ]
+    gbp.list_reviews.return_value = unreplied_reviews + [already_replied]
+    gbp.reply_to_review.return_value = {}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value={"defaults": {"max_replies_per_run": 2}}):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    # 5 total, 4 unreplied (cap=2 → 2 deferred), 1 already-replied
+    assert result["skipped"] == 1
+    assert result["deferred"] == 2
+    assert result["replied"] == 2
