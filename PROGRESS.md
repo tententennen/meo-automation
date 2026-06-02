@@ -1,6 +1,92 @@
 # PROGRESS
 
-## Status: All milestones complete — 109/109 tests green
+## Status: All milestones complete — 123/123 tests green
+
+---
+
+## Completed this run (run 12)
+
+### Improvement: Anthropic prompt caching (`src/meo/content.py`)
+
+**Problem**: `_call_anthropic()` forwarded the system prompt as a plain string.
+Every call to `generate_post()` or `generate_reply()` re-transmitted the full
+system prompt to the Anthropic API, paying full input-token cost each time.
+
+In a normal daily run (3 stores × post + up to 10 review replies each), the
+same system prompt text is sent repeatedly — for `generate_post` it is
+**byte-for-byte identical** across all 3 stores.
+
+**Fix**: The `system` parameter is now sent as a list containing a single
+content block with `cache_control: {"type": "ephemeral"}`:
+
+```python
+kwargs["system"] = [
+    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+]
+```
+
+Anthropic caches this prefix for 5 minutes.  Cache hits cost **10% of the
+original input-token price** — effectively free for repeated calls within the
+same daily run.  Estimated saving:
+- `generate_post` system prompt (~75 tokens) cached after first store call →
+  saves 2× re-transmission per run.
+- `generate_reply` system prompt (~50 tokens, different per store) cached
+  within each store's review-reply loop → saves up to 9× re-transmission per
+  store when `max_replies_per_run = 10`.
+
+No config changes needed.  The OpenAI path is unaffected.
+
+### New tool: `meo-preview` (`src/meo/tools/preview.py`)
+
+A new CLI that generates sample content previews for all configured stores
+**without requiring Google credentials** — only `ANTHROPIC_API_KEY` (or
+`OPENAI_API_KEY` if using the OpenAI provider).
+
+**Purpose**: operators can run this after editing `config/content.yaml` (tone,
+themes, banned words) to immediately see what the LLM would produce, without
+triggering any Google API calls or touching live store data.
+
+**Usage**:
+```bash
+# All stores
+meo-preview                              # or: python -m meo.tools.preview
+
+# One store
+meo-preview --store the_body_kyoto
+
+# Save to file
+meo-preview --output logs/preview.txt
+```
+
+For each store the preview shows:
+1. A full 最新情報 post body (same code path as the live runner, including
+   theme selection from the configured theme list)
+2. A review reply for a sample 3-star review (the most instructive rating —
+   it requires both gratitude and a measured acknowledgement of a concern)
+
+**Design decisions**:
+- Per-store errors are captured (and exit code is set to 1) but do not block
+  other stores — same isolation model as the main runner.
+- Output goes to stdout always; `--output` additionally saves a UTF-8 file.
+- `dotenv` is loaded if present (same as `main.py` and `status.py`) so the
+  tool works identically in development and CI.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/content.py` | `_call_anthropic`: system prompt sent as cached content block |
+| `src/meo/tools/preview.py` | New module: `run_preview()`, `_format_output()`, `main()` |
+| `pyproject.toml` | Added `meo-preview` script entry point |
+
+### New tests (+14 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_content.py` | `test_call_anthropic_passes_system_as_cached_block`; `test_call_anthropic_without_system_omits_system_key` |
+| `tests/test_preview.py` | `test_run_preview_returns_post_and_reply_for_each_store`; `test_run_preview_captures_post_error`; `test_run_preview_captures_reply_error`; `test_run_preview_continues_after_one_store_error`; `test_format_output_contains_store_name_and_content`; `test_format_output_marks_errors`; `test_format_output_contains_timestamp`; `test_main_exits_0_on_success`; `test_main_exits_1_when_any_store_has_error`; `test_main_store_filter_limits_to_one_store`; `test_main_unknown_store_exits_1`; `test_main_output_flag_saves_file` |
+
+Total: **123/123 tests** (was 109).
 
 ---
 
@@ -729,15 +815,17 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (109/109).
+All code is complete and the test suite is green (123/123).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:
 1. Run `python -m meo.tools.status` to check config + env var readiness.
-2. Run `pytest` to confirm all 109 tests still pass.
-3. Run `python -m meo.main --store the_body_kyoto --dry-run` to verify single-store flow.
-4. Run `python -m meo.main --dry-run` for all stores.
-5. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
+2. Run `pytest` to confirm all 123 tests still pass.
+3. **Run `meo-preview`** to verify LLM output quality before any live Google API calls.
+   This requires only `ANTHROPIC_API_KEY` — no Google credentials needed yet.
+4. Run `python -m meo.main --store the_body_kyoto --dry-run` to verify single-store flow.
+5. Run `python -m meo.main --dry-run` for all stores.
+6. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
    - `SLACK_WEBHOOK_URL` is optional but highly recommended so you get a Slack message after each run.
-6. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
-7. After the first live post, verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO in `business_profile.py` once confirmed.
+7. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
+8. After the first live post, verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO in `business_profile.py` once confirmed.

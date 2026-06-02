@@ -30,6 +30,7 @@ dev = [
 [project.scripts]
 meo-run = "meo.main:main"
 meo-status = "meo.tools.status:main"
+meo-preview = "meo.tools.preview:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

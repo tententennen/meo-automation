@@ -175,3 +175,72 @@ def test_jst_date_context_contains_year_and_season():
     assert "日" in ctx
     # One of the four seasons must appear in parentheses
     assert any(s in ctx for s in ("（春）", "（夏）", "（秋）", "（冬）"))
+
+
+# ---------------------------------------------------------------------------
+# Anthropic prompt caching
+# ---------------------------------------------------------------------------
+
+def _make_fake_anthropic(fake_client):
+    """Build a minimal fake anthropic module wired to fake_client."""
+    import types
+    mod = types.ModuleType("anthropic")
+    mod.Anthropic = MagicMock(return_value=fake_client)
+    mod.RateLimitError = Exception
+    mod.APIError = Exception
+    return mod
+
+
+def test_call_anthropic_passes_system_as_cached_block():
+    """System prompt must be forwarded as a content block with cache_control.
+
+    Anthropic's prompt caching API requires the system parameter to be a list
+    of typed content blocks (not a plain string) when cache_control is used.
+    Cache hits save ~90% of cached-prefix token costs across same-day runs.
+    """
+    import sys, os
+
+    fake_msg = MagicMock()
+    fake_msg.content = [MagicMock(text="テスト")]
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_msg
+
+    fake_anthropic = _make_fake_anthropic(fake_client)
+    sys.modules["anthropic"] = fake_anthropic
+    os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+
+    try:
+        content._call_anthropic("prompt", {"model_id": "test"}, system="システム")
+        call_kw = fake_client.messages.create.call_args.kwargs
+        system_arg = call_kw["system"]
+        assert isinstance(system_arg, list), "system must be a list of content blocks"
+        assert len(system_arg) == 1
+        block = system_arg[0]
+        assert block["type"] == "text"
+        assert block["text"] == "システム"
+        assert block["cache_control"] == {"type": "ephemeral"}
+    finally:
+        sys.modules.pop("anthropic", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+
+
+def test_call_anthropic_without_system_omits_system_key():
+    """When no system prompt is provided the 'system' key must be absent entirely."""
+    import sys, os
+
+    fake_msg = MagicMock()
+    fake_msg.content = [MagicMock(text="テスト")]
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_msg
+
+    fake_anthropic = _make_fake_anthropic(fake_client)
+    sys.modules["anthropic"] = fake_anthropic
+    os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+
+    try:
+        content._call_anthropic("prompt", {"model_id": "test"})
+        call_kw = fake_client.messages.create.call_args.kwargs
+        assert "system" not in call_kw
+    finally:
+        sys.modules.pop("anthropic", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)

@@ -213,7 +213,13 @@ def _call_anthropic(
         "messages": [{"role": "user", "content": prompt}],
     }
     if system:
-        kwargs["system"] = system
+        # Pass the system prompt as a cached content block. The Anthropic API
+        # reuses the cached prefix across calls within the same 5-minute TTL,
+        # saving ~90% of system-prompt token costs when the daily job processes
+        # multiple stores or reviews with the same role/instruction text.
+        kwargs["system"] = [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        ]
     try:
         message = client.messages.create(**kwargs)
     except anthropic.RateLimitError as exc:
