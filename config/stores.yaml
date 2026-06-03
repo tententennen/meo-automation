@@ -3,10 +3,15 @@
 #
 # location_id: Google Business Profile location ID.
 #   Format: "accounts/{account_id}/locations/{location_id}"
-#   Find it via: GET https://mybusinessbusinessinformation.googleapis.com/v1/accounts/{account_id}/locations
+#   Find it via: python -m meo.tools.discover_locations
 #
 # drive_folder_id: Google Drive folder ID that contains photos for this store.
 #   Find it in the folder's URL: https://drive.google.com/drive/folders/{FOLDER_ID}
+#
+# call_to_action (optional): attaches a button to each local post.
+#   action_type: BOOK | ORDER | SHOP | LEARN_MORE | SIGN_UP | CALL | GET_OFFER
+#   url: the destination URL for the button (e.g. your online booking page)
+#   Leave this section commented out to post without a call-to-action button.
 
 stores:
   the_body_osaka_shinsaibashi:
@@ -14,15 +19,24 @@ stores:
     location_id: "TODO: accounts/{account_id}/locations/{location_id}"
     drive_folder_id: "TODO: Google Drive folder ID"
     industry: "beauty_salon"
+    # call_to_action:
+    #   action_type: "BOOK"
+    #   url: ""   # e.g. https://yoursite.com/osaka/book
 
   the_body_kyoto:
     name: "THE BODY 京都店"
     location_id: "TODO: accounts/{account_id}/locations/{location_id}"
     drive_folder_id: "TODO: Google Drive folder ID"
     industry: "beauty_salon"
+    # call_to_action:
+    #   action_type: "BOOK"
+    #   url: ""   # e.g. https://yoursite.com/kyoto/book
 
   mybear_studio_kyoto:
     name: "MYBEAR STUDIO 京都店"
     location_id: "TODO: accounts/{account_id}/locations/{location_id}"
     drive_folder_id: "TODO: Google Drive folder ID"
     industry: "fitness_studio"
+    # call_to_action:
+    #   action_type: "BOOK"
+    #   url: ""   # e.g. https://yoursite.com/mybear/trial

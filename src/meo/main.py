@@ -39,6 +39,7 @@ from .drive import DriveClient
 from .notify import send_run_summary
 from .posts import run_post_for_store
 from .reviews import run_reviews_for_store
+from .validator import validate_all
 
 _LOG_DIR = Path(__file__).resolve().parents[3] / "logs"
 
@@ -89,6 +90,17 @@ def main() -> None:
 
     if args.dry_run:
         logger.info("=== DRY RUN MODE — no API writes will be made ===")
+
+    logger.info("Validating configuration...")
+    config_errors = validate_all()
+    if config_errors:
+        for e in config_errors:
+            logger.error("Configuration error: %s", e)
+        logger.critical(
+            "%d configuration error(s) found. Fix the errors above and re-run.",
+            len(config_errors),
+        )
+        sys.exit(1)
 
     logger.info("Authenticating with Google APIs...")
     try:

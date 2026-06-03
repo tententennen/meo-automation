@@ -31,6 +31,7 @@ dev = [
 meo-run = "meo.main:main"
 meo-status = "meo.tools.status:main"
 meo-preview = "meo.tools.preview:main"
+meo-validate = "meo.tools.validate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

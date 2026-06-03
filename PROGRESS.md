@@ -1,6 +1,90 @@
 # PROGRESS
 
-## Status: All milestones complete — 123/123 tests green
+## Status: All milestones complete — 148/148 tests green
+
+---
+
+## Completed this run (run 13)
+
+### Feature: startup config validation (`src/meo/validator.py`)
+
+**Problem**: Any misconfiguration (wrong field name in `stores.yaml`, unsupported
+`llm.provider`, missing env var) was discovered mid-run when the first API call
+failed — often with a cryptic Python exception rather than a clear message.
+
+**Fix**: Added `validator.py` with four pure functions:
+
+| Function | Checks |
+|---|---|
+| `validate_env(content_conf)` | All 4 required env vars; respects `llm.provider` (ANTHROPIC_API_KEY vs OPENAI_API_KEY) |
+| `validate_stores(stores_data)` | Required fields per store; known `industry` values; `call_to_action` structure when present |
+| `validate_content(content_data)` | `defaults`, `llm`, and `industry_tones` sections; supported provider value |
+| `validate_all(*, check_env=True)` | Runs all checks; returns a flat list of error strings (empty = valid) |
+
+`validate_all()` is now called in `main()` immediately after logging is set up
+and before any Google API call.  If any check fails, all errors are logged and
+the process exits 1 with a clear summary — instead of failing halfway through
+the first store.
+
+`validate_all(check_env=False)` is available for CI jobs that only want to
+validate config file structure without requiring live credentials.
+
+### New CLI: `meo-validate` (`src/meo/tools/validate.py`)
+
+```bash
+meo-validate              # or: python -m meo.tools.validate
+```
+
+Runs `validate_all()` and prints each error with `✗`.  Exits 0 on success,
+exits 1 on failure.  Useful as a one-shot pre-flight check before the first
+live run or after editing `config/stores.yaml` / `config/content.yaml`.
+
+### Feature: call-to-action in local posts
+
+Each store can now attach a button to its 最新情報 posts by adding a
+`call_to_action` section to `config/stores.yaml`:
+
+```yaml
+call_to_action:
+  action_type: "BOOK"   # BOOK | ORDER | SHOP | LEARN_MORE | SIGN_UP | CALL | GET_OFFER
+  url: "https://yoursite.com/book"
+```
+
+When `url` is non-empty, `posts.py` builds the `{"actionType": ..., "url": ...}`
+dict and passes it as `call_to_action=` to `BusinessProfileClient.create_local_post()`,
+which already had the parameter wired to the GBP API body.
+
+When `call_to_action` is absent from the store config, or when `url` is an
+empty string, `None` is passed — the API call is identical to before, with no
+CTA button in the post.
+
+All three stores in `config/stores.yaml` now include a commented-out CTA
+template that the owner can uncomment and fill in when the booking URL is ready.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/validator.py` | New module: `validate_env`, `validate_stores`, `validate_content`, `validate_all` |
+| `src/meo/tools/validate.py` | New CLI: `meo-validate` entry point |
+| `src/meo/main.py` | Imports and calls `validate_all()` before auth |
+| `src/meo/posts.py` | Reads `call_to_action` from store config; passes it to `create_local_post()` |
+| `config/stores.yaml` | Commented-out CTA template added to all three stores |
+| `pyproject.toml` | Added `meo-validate` script entry point |
+
+### New tests (+25 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_validator.py` | 21 new tests: `validate_env` (5); `validate_stores` (6); `validate_content` (4); `validate_all` (5) — see file for names |
+| `tests/test_posts.py` | `test_call_to_action_passed_when_configured`; `test_call_to_action_omitted_when_not_configured`; `test_call_to_action_omitted_when_url_is_empty` |
+| `tests/test_main.py` | `bypass_validation` autouse fixture patches `validate_all` in all 7 existing tests (not a new test count, but required for correctness) |
+
+Updated: `test_live_run_downloads_and_uploads_image` — expected call to
+`create_local_post` now includes `call_to_action=None` to match the updated
+`posts.py` signature.
+
+Total: **148/148 tests** (was 123).
 
 ---
 

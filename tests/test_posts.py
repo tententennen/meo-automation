@@ -61,9 +61,9 @@ def test_live_run_downloads_and_uploads_image():
     gbp.upload_media_bytes.assert_called_once_with(
         _STORE["location_id"], _FAKE_BYTES, "image/jpeg"
     )
-    # create_local_post should use the GBP-hosted URL, not the Drive link
+    # create_local_post should use the GBP-hosted URL; no CTA configured for this store
     gbp.create_local_post.assert_called_once_with(
-        _STORE["location_id"], post_text, _GBP_HOSTED_URL
+        _STORE["location_id"], post_text, _GBP_HOSTED_URL, call_to_action=None
     )
     mock_record_image.assert_called_once_with(_STORE["key"], "img1")
     assert result["status"] == "posted"
@@ -211,3 +211,66 @@ def test_dry_run_does_not_record_theme():
 
     mock_record_theme.assert_not_called()
     assert result["status"] == "dry_run"
+
+
+# ---------------------------------------------------------------------------
+# Call-to-action tests
+# ---------------------------------------------------------------------------
+
+def test_call_to_action_passed_when_configured():
+    """CTA from store config is forwarded to create_local_post as a keyword arg."""
+    store_with_cta = {
+        **_STORE,
+        "call_to_action": {"action_type": "BOOK", "url": "https://example.com/book"},
+    }
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
+        run_post_for_store(store_with_cta, gbp, drive, dry_run=False)
+
+    call_kwargs = gbp.create_local_post.call_args.kwargs
+    assert call_kwargs.get("call_to_action") == {
+        "actionType": "BOOK",
+        "url": "https://example.com/book",
+    }
+
+
+def test_call_to_action_omitted_when_not_configured():
+    """When store has no call_to_action config, None is passed to create_local_post."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    call_kwargs = gbp.create_local_post.call_args.kwargs
+    assert call_kwargs.get("call_to_action") is None
+
+
+def test_call_to_action_omitted_when_url_is_empty():
+    """CTA with an empty URL string is treated as not configured."""
+    store_empty_url = {
+        **_STORE,
+        "call_to_action": {"action_type": "BOOK", "url": ""},
+    }
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
+        run_post_for_store(store_empty_url, gbp, drive, dry_run=False)
+
+    call_kwargs = gbp.create_local_post.call_args.kwargs
+    assert call_kwargs.get("call_to_action") is None

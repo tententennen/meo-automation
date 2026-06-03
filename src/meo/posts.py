@@ -130,24 +130,35 @@ def run_post_for_store(
     else:
         logger.warning("[%s] No images found in Drive folder; posting without photo.", store_key)
 
+    # --- Call-to-action (optional per-store config) ---
+    cta_conf = store.get("call_to_action")
+    call_to_action: dict[str, str] | None = None
+    if cta_conf and cta_conf.get("url"):
+        call_to_action = {
+            "actionType": cta_conf["action_type"],
+            "url": cta_conf["url"],
+        }
+
     # --- Dry run ---
     if dry_run:
         logger.info(
-            "[%s] DRY RUN — would post:\n%s\nTheme: %s\nImage: %s",
+            "[%s] DRY RUN — would post:\n%s\nTheme: %s\nImage: %s\nCTA: %s",
             store_key,
             post_text,
             chosen_theme or "LLM choice",
             image_meta.get("name") if image_meta else "none",
+            call_to_action or "none",
         )
         return {
             "store_key": store_key,
             "status": "dry_run",
             "post_text": post_text,
             "theme": chosen_theme,
+            "call_to_action": call_to_action,
         }
 
     # --- Live post ---
-    result = gbp.create_local_post(location_id, post_text, media_url)
+    result = gbp.create_local_post(location_id, post_text, media_url, call_to_action=call_to_action)
     record_post(store_key)
     if image_meta:
         record_image(store_key, image_meta["id"])

@@ -6,6 +6,12 @@ from unittest.mock import patch, MagicMock
 from meo.main import main
 
 
+@pytest.fixture(autouse=True)
+def bypass_validation(monkeypatch):
+    """Skip config validation for all main.py tests — it is tested separately in test_validator.py."""
+    monkeypatch.setattr("meo.main.validate_all", lambda **_: [])
+
+
 def _fake_store(key: str, location_id: str = "accounts/1/locations/1") -> dict:
     return {
         "key": key,
