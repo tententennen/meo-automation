@@ -6,6 +6,12 @@ import pytest
 from meo.reviews import run_reviews_for_store, _has_reply, _extract_review_id
 
 
+@pytest.fixture(autouse=True)
+def patch_record_reply_content(monkeypatch):
+    """Silence record_reply_content for all tests — archiving is tested in test_state.py."""
+    monkeypatch.setattr("meo.reviews.record_reply_content", lambda *a, **kw: None)
+
+
 _STORE = {
     "key": "the_body_osaka_shinsaibashi",
     "name": "THE BODY 大阪 心斎橋店",
@@ -131,3 +137,36 @@ def test_skipped_counts_only_already_replied():
     assert result["skipped"] == 1
     assert result["deferred"] == 2
     assert result["replied"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Content archiving test
+# ---------------------------------------------------------------------------
+
+def test_record_reply_content_called_after_live_reply():
+    """record_reply_content must be called with correct args after a live reply."""
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [_REVIEW_UNREPLIED]
+    gbp.reply_to_review.return_value = {}
+    with patch("meo.reviews.generate_reply", return_value="テスト返信"), \
+         patch("meo.reviews.record_reply_content") as mock_archive:
+        run_reviews_for_store(_STORE, gbp, dry_run=False)
+
+    mock_archive.assert_called_once()
+    args = mock_archive.call_args.args
+    assert args[0] == _STORE["key"]
+    assert args[1] == "rev001"
+    assert args[2] == "山田花子"
+    assert args[3] == "FOUR"
+    assert args[4] == "テスト返信"
+
+
+def test_record_reply_content_not_called_on_dry_run():
+    """Dry run must not archive any reply content."""
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [_REVIEW_UNREPLIED]
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.reviews.record_reply_content") as mock_archive:
+        run_reviews_for_store(_STORE, gbp, dry_run=True)
+
+    mock_archive.assert_not_called()

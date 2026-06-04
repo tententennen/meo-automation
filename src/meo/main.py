@@ -74,6 +74,14 @@ def main() -> None:
     parser.add_argument("--skip-posts", action="store_true", help="Skip local post creation.")
     parser.add_argument("--skip-reviews", action="store_true", help="Skip review reply posting.")
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Bypass the cadence guard and post even if a post was already made today. "
+            "Use this for manual re-runs after an error or to regenerate a post."
+        ),
+    )
+    parser.add_argument(
         "--store",
         metavar="STORE_KEY",
         nargs="+",
@@ -148,7 +156,7 @@ def main() -> None:
         # --- Local posts ---
         if not args.skip_posts:
             try:
-                post_result = run_post_for_store(store, gbp, drive, dry_run=args.dry_run)
+                post_result = run_post_for_store(store, gbp, drive, dry_run=args.dry_run, force=args.force)
                 store_results["post"] = post_result
             except Exception as exc:
                 logger.error("[%s] Post failed: %s", store_key, exc, exc_info=True)

@@ -6,6 +6,12 @@ import pytest
 from meo.posts import run_post_for_store
 
 
+@pytest.fixture(autouse=True)
+def patch_record_post_content(monkeypatch):
+    """Silence record_post_content for all tests — archiving is tested in test_state.py."""
+    monkeypatch.setattr("meo.posts.record_post_content", lambda *a, **kw: None)
+
+
 _STORE = {
     "key": "mybear_studio_kyoto",
     "name": "MYBEAR STUDIO 京都店",
@@ -274,3 +280,57 @@ def test_call_to_action_omitted_when_url_is_empty():
 
     call_kwargs = gbp.create_local_post.call_args.kwargs
     assert call_kwargs.get("call_to_action") is None
+
+
+# ---------------------------------------------------------------------------
+# Content archiving test
+# ---------------------------------------------------------------------------
+
+def test_record_post_content_called_with_correct_args():
+    """record_post_content must be called after a live post with store key and text."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"), \
+         patch("meo.posts.record_post_content") as mock_archive:
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    mock_archive.assert_called_once()
+    args = mock_archive.call_args.args
+    assert args[0] == _STORE["key"]
+    assert args[1] == post_text
+
+
+def test_record_post_content_not_called_on_dry_run():
+    """Dry run must not archive any content to state."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post_content") as mock_archive:
+        run_post_for_store(_STORE, gbp, drive, dry_run=True)
+
+    mock_archive.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# --force flag test
+# ---------------------------------------------------------------------------
+
+def test_force_flag_bypasses_cadence_guard():
+    """force=True posts even when should_post_today returns False."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=False) as mock_should, \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
+        result = run_post_for_store(_STORE, gbp, drive, dry_run=False, force=True)
+
+    gbp.create_local_post.assert_called_once()
+    assert result["status"] == "posted"

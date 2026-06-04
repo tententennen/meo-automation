@@ -244,3 +244,107 @@ def test_call_anthropic_without_system_omits_system_key():
     finally:
         sys.modules.pop("anthropic", None)
         os.environ.pop("ANTHROPIC_API_KEY", None)
+
+
+# ---------------------------------------------------------------------------
+# Retry logic tests (_call_with_retry)
+# ---------------------------------------------------------------------------
+
+def test_call_with_retry_succeeds_immediately():
+    """When the first attempt succeeds, no sleep occurs."""
+    calls: list[int] = []
+
+    def fn():
+        calls.append(1)
+        return "ok"
+
+    with patch("meo.content.time.sleep") as mock_sleep:
+        result = content._call_with_retry(fn, max_attempts=3)
+
+    assert result == "ok"
+    assert len(calls) == 1
+    mock_sleep.assert_not_called()
+
+
+def test_call_with_retry_succeeds_on_second_attempt():
+    """When the first attempt raises RuntimeError, the second attempt succeeds."""
+    calls: list[int] = []
+
+    def fn():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("transient error")
+        return "ok"
+
+    with patch("meo.content.time.sleep"):
+        result = content._call_with_retry(fn, max_attempts=3)
+
+    assert result == "ok"
+    assert len(calls) == 2
+
+
+def test_call_with_retry_raises_after_all_attempts_fail():
+    """After max_attempts failures the last exception is re-raised."""
+    def fn():
+        raise RuntimeError("persistent error")
+
+    with patch("meo.content.time.sleep"):
+        with pytest.raises(RuntimeError, match="persistent error"):
+            content._call_with_retry(fn, max_attempts=3)
+
+
+def test_call_with_retry_does_not_retry_environment_error():
+    """EnvironmentError (missing API key) is re-raised immediately without retry."""
+    calls: list[int] = []
+
+    def fn():
+        calls.append(1)
+        raise EnvironmentError("no key")
+
+    with patch("meo.content.time.sleep") as mock_sleep:
+        with pytest.raises(EnvironmentError):
+            content._call_with_retry(fn, max_attempts=3)
+
+    assert len(calls) == 1
+    mock_sleep.assert_not_called()
+
+
+def test_call_with_retry_sleeps_between_attempts():
+    """A sleep call must occur between each failed attempt."""
+    calls: list[int] = []
+
+    def fn():
+        calls.append(1)
+        if len(calls) < 3:
+            raise RuntimeError("fail")
+        return "ok"
+
+    with patch("meo.content.time.sleep") as mock_sleep:
+        content._call_with_retry(fn, max_attempts=3, base_delay=1.0)
+
+    assert mock_sleep.call_count == 2  # slept after attempt 1 and 2
+
+
+def test_call_with_retry_rate_limit_uses_longer_delay():
+    """Rate-limit errors must get a longer backoff than generic API errors."""
+    def make_fn(error_msg):
+        calls: list[int] = []
+        def fn():
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError(error_msg)
+            return "ok"
+        return fn
+
+    rate_delays: list[float] = []
+    generic_delays: list[float] = []
+
+    with patch("meo.content.time.sleep", side_effect=lambda d: rate_delays.append(d)):
+        content._call_with_retry(make_fn("rate limit reached"), max_attempts=3, base_delay=1.0)
+
+    with patch("meo.content.time.sleep", side_effect=lambda d: generic_delays.append(d)):
+        content._call_with_retry(make_fn("server error 500"), max_attempts=3, base_delay=1.0)
+
+    assert len(rate_delays) == 1
+    assert len(generic_delays) == 1
+    assert rate_delays[0] > generic_delays[0]

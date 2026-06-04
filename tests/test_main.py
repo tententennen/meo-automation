@@ -58,7 +58,7 @@ def test_store_filter_limits_processing():
     mock_creds, mock_gbp, mock_drive = _base_mocks()
     processed_keys: list[str] = []
 
-    def track_post(store, gbp, drive, *, dry_run=False):
+    def track_post(store, gbp, drive, *, dry_run=False, force=False):
         processed_keys.append(store["key"])
         return {"store_key": store["key"], "status": "dry_run", "post_text": ""}
 
@@ -83,7 +83,7 @@ def test_store_filter_multiple_keys():
     mock_creds, mock_gbp, mock_drive = _base_mocks()
     processed_keys: list[str] = []
 
-    def track_post(store, gbp, drive, *, dry_run=False):
+    def track_post(store, gbp, drive, *, dry_run=False, force=False):
         processed_keys.append(store["key"])
         return {"store_key": store["key"], "status": "dry_run", "post_text": ""}
 
@@ -150,7 +150,7 @@ def test_skip_reviews_flag_skips_review_replies():
     """--skip-reviews should not call run_reviews_for_store."""
     mock_creds, mock_gbp, mock_drive = _base_mocks()
 
-    def track_post(store, gbp, drive, *, dry_run=False):
+    def track_post(store, gbp, drive, *, dry_run=False, force=False):
         return {"store_key": store["key"], "status": "dry_run", "post_text": ""}
 
     with patch("sys.argv", ["meo", "--skip-reviews", "--dry-run"]), \
@@ -164,3 +164,31 @@ def test_skip_reviews_flag_skips_review_replies():
             main()
 
     mock_reviews.assert_not_called()
+
+
+def test_force_flag_forwarded_to_run_post_for_store():
+    """--force must be forwarded as force=True to run_post_for_store."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    captured_kwargs: list[dict] = []
+
+    def track_post(store, gbp, drive, *, dry_run=False, force=False):
+        captured_kwargs.append({"dry_run": dry_run, "force": force})
+        return {"store_key": store["key"], "status": "posted", "post_name": "p1"}
+
+    def track_reviews(store, gbp, *, dry_run=False):
+        return {"store_key": store["key"], "replied": 0, "skipped": 0, "deferred": 0, "errors": []}
+
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+    with patch("sys.argv", ["meo", "--store", "the_body_kyoto", "--force"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews):
+        with pytest.raises(SystemExit):
+            main()
+
+    assert len(captured_kwargs) == 1
+    assert captured_kwargs[0]["force"] is True
+    assert captured_kwargs[0]["dry_run"] is False

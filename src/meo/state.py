@@ -145,3 +145,73 @@ def get_recent_themes(store_key: str) -> list[str]:
     Returns an empty list if no history exists.
     """
     return list(_load().get("recent_themes", {}).get(store_key, []))
+
+
+# ---------------------------------------------------------------------------
+# Content archiving helpers
+# ---------------------------------------------------------------------------
+
+_POST_HISTORY_SIZE = 30   # max archived post entries per store
+_REPLY_HISTORY_SIZE = 50  # max archived reply entries per store
+
+
+def record_post_content(
+    store_key: str,
+    text: str,
+    theme: str | None,
+    post_name: str | None = None,
+) -> None:
+    """Archive the generated post text for this store.
+
+    Keeps the most recent _POST_HISTORY_SIZE entries so the owner can review
+    what was published via `meo-report` without visiting Google manually.
+    """
+    entry: dict[str, str] = {
+        "date": _today().isoformat(),
+        "theme": theme or "",
+        "text": text,
+        "post_name": post_name or "",
+    }
+    state = _load()
+    history: list[dict] = state.setdefault("post_history", {}).setdefault(store_key, [])
+    history.insert(0, entry)
+    state["post_history"][store_key] = history[:_POST_HISTORY_SIZE]
+    _save(state)
+    logger.debug("Archived post content for %s (%d chars)", store_key, len(text))
+
+
+def get_post_history(store_key: str) -> list[dict]:
+    """Return the archived post history for store_key (most recent first)."""
+    return list(_load().get("post_history", {}).get(store_key, []))
+
+
+def record_reply_content(
+    store_key: str,
+    review_id: str,
+    reviewer: str,
+    stars: str,
+    reply_text: str,
+) -> None:
+    """Archive a generated review reply for this store.
+
+    Keeps the most recent _REPLY_HISTORY_SIZE entries so the owner can review
+    what was replied via `meo-report` without visiting Google manually.
+    """
+    entry: dict[str, str] = {
+        "date": _today().isoformat(),
+        "review_id": review_id,
+        "reviewer": reviewer,
+        "stars": stars,
+        "reply": reply_text,
+    }
+    state = _load()
+    history: list[dict] = state.setdefault("reply_history", {}).setdefault(store_key, [])
+    history.insert(0, entry)
+    state["reply_history"][store_key] = history[:_REPLY_HISTORY_SIZE]
+    _save(state)
+    logger.debug("Archived reply content for %s (review %s)", store_key, review_id)
+
+
+def get_reply_history(store_key: str) -> list[dict]:
+    """Return the archived reply history for store_key (most recent first)."""
+    return list(_load().get("reply_history", {}).get(store_key, []))

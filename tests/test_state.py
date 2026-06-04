@@ -168,3 +168,92 @@ def test_record_theme_deduplicates_on_reuse():
 def test_theme_history_independent_per_store():
     state_mod.record_theme("store_a", "テーマX")
     assert state_mod.get_recent_themes("store_b") == []
+
+
+# ---------------------------------------------------------------------------
+# Post content archiving tests
+# ---------------------------------------------------------------------------
+
+def test_get_post_history_empty_when_no_history():
+    assert state_mod.get_post_history("my_store") == []
+
+
+def test_record_post_content_stores_entry(frozen_today):
+    state_mod.record_post_content("my_store", "テスト投稿テキスト", "季節テーマ", "accounts/1/localPosts/9")
+    history = state_mod.get_post_history("my_store")
+    assert len(history) == 1
+    entry = history[0]
+    assert entry["date"] == _FIXED_TODAY.isoformat()
+    assert entry["theme"] == "季節テーマ"
+    assert entry["text"] == "テスト投稿テキスト"
+    assert entry["post_name"] == "accounts/1/localPosts/9"
+
+
+def test_record_post_content_most_recent_first(frozen_today):
+    state_mod.record_post_content("my_store", "first post", "テーマ1")
+    state_mod.record_post_content("my_store", "second post", "テーマ2")
+    history = state_mod.get_post_history("my_store")
+    assert history[0]["text"] == "second post"
+    assert history[1]["text"] == "first post"
+
+
+def test_record_post_content_capped_at_limit(frozen_today):
+    limit = state_mod._POST_HISTORY_SIZE
+    for i in range(limit + 3):
+        state_mod.record_post_content("my_store", f"post {i}", f"theme {i}")
+    history = state_mod.get_post_history("my_store")
+    assert len(history) == limit
+    assert history[0]["text"] == f"post {limit + 2}"
+
+
+def test_post_history_independent_per_store(frozen_today):
+    state_mod.record_post_content("store_a", "A post", "テーマA")
+    assert state_mod.get_post_history("store_b") == []
+
+
+def test_record_post_content_none_theme_stored_as_empty_string(frozen_today):
+    state_mod.record_post_content("my_store", "no theme post", None)
+    history = state_mod.get_post_history("my_store")
+    assert history[0]["theme"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Reply content archiving tests
+# ---------------------------------------------------------------------------
+
+def test_get_reply_history_empty_when_no_history():
+    assert state_mod.get_reply_history("my_store") == []
+
+
+def test_record_reply_content_stores_entry(frozen_today):
+    state_mod.record_reply_content("my_store", "rev001", "田中太郎", "FIVE", "ありがとうございます！")
+    history = state_mod.get_reply_history("my_store")
+    assert len(history) == 1
+    entry = history[0]
+    assert entry["date"] == _FIXED_TODAY.isoformat()
+    assert entry["review_id"] == "rev001"
+    assert entry["reviewer"] == "田中太郎"
+    assert entry["stars"] == "FIVE"
+    assert entry["reply"] == "ありがとうございます！"
+
+
+def test_record_reply_content_most_recent_first(frozen_today):
+    state_mod.record_reply_content("my_store", "rev001", "A", "FOUR", "reply 1")
+    state_mod.record_reply_content("my_store", "rev002", "B", "FIVE", "reply 2")
+    history = state_mod.get_reply_history("my_store")
+    assert history[0]["review_id"] == "rev002"
+    assert history[1]["review_id"] == "rev001"
+
+
+def test_record_reply_content_capped_at_limit(frozen_today):
+    limit = state_mod._REPLY_HISTORY_SIZE
+    for i in range(limit + 3):
+        state_mod.record_reply_content("my_store", f"rev{i:03d}", "X", "THREE", f"reply {i}")
+    history = state_mod.get_reply_history("my_store")
+    assert len(history) == limit
+    assert history[0]["review_id"] == f"rev{limit + 2:03d}"
+
+
+def test_reply_history_independent_per_store(frozen_today):
+    state_mod.record_reply_content("store_a", "rev001", "A", "FIVE", "reply")
+    assert state_mod.get_reply_history("store_b") == []

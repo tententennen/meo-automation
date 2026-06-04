@@ -8,6 +8,7 @@ from typing import Any
 from . import config as cfg
 from .business_profile import BusinessProfileClient
 from .content import generate_reply
+from .state import record_reply_content
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,13 @@ def run_reviews_for_store(
                 logger.info("[%s] DRY RUN — would reply to review %s:\n%s", store_key, review_id, reply_text)
             else:
                 gbp.reply_to_review(location_id, review_id, reply_text)
+                record_reply_content(
+                    store_key,
+                    review_id,
+                    reviewer,
+                    review.get("starRating", ""),
+                    reply_text,
+                )
             replied += 1
         except Exception as exc:
             msg = f"Failed to reply to review {review_id}: {exc}"

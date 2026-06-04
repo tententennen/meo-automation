@@ -26,6 +26,7 @@ from .state import (
     get_recent_themes,
     record_image,
     record_post,
+    record_post_content,
     record_theme,
     should_post_today,
 )
@@ -53,18 +54,20 @@ def run_post_for_store(
     drive: DriveClient,
     *,
     dry_run: bool = False,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Generate and publish one 最新情報 post for a single store.
 
     Skips posting if a post was already made within the configured cadence window
     (post_cadence_days in content.yaml) to prevent duplicates if the runner fires
-    more than once in a day.
+    more than once in a day.  Pass force=True to bypass this guard.
 
     Args:
         store:   Store dict from config.store_list().
         gbp:     Authenticated BusinessProfileClient.
         drive:   Authenticated DriveClient.
         dry_run: If True, log what would happen but make no API writes.
+        force:   If True, bypass the cadence guard and always post.
 
     Returns:
         A result dict with keys: store_key, status, post_name (or error).
@@ -76,7 +79,7 @@ def run_post_for_store(
 
     cadence_days: int = cfg.content()["defaults"].get("post_cadence_days", 1)
 
-    if not dry_run and not should_post_today(store_key, cadence_days):
+    if not dry_run and not force and not should_post_today(store_key, cadence_days):
         logger.info(
             "[%s] Post already made within cadence window (%d day(s)). Skipping.",
             store_key, cadence_days,
@@ -160,6 +163,7 @@ def run_post_for_store(
     # --- Live post ---
     result = gbp.create_local_post(location_id, post_text, media_url, call_to_action=call_to_action)
     record_post(store_key)
+    record_post_content(store_key, post_text, chosen_theme, result.get("name"))
     if image_meta:
         record_image(store_key, image_meta["id"])
     if chosen_theme:
