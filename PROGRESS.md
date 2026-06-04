@@ -1,6 +1,100 @@
 # PROGRESS
 
-## Status: All milestones complete — 148/148 tests green
+## Status: All milestones complete — 180/180 tests green
+
+---
+
+## Completed this run (run 14)
+
+### Feature: LLM retry with exponential backoff (`src/meo/content.py`)
+
+**Problem**: `_call_anthropic()` and `_call_openai()` had no retry logic. A
+transient API failure (rate limit, 5xx server error) would fail the entire store
+run immediately, with no attempt to recover.
+
+**Fix**: Added `_call_with_retry(fn, max_attempts, *, base_delay)` helper.
+
+| Aspect | Behaviour |
+|---|---|
+| `EnvironmentError` / `ValueError` | Never retried (config errors — fix the config) |
+| `RuntimeError` (generic API error) | Retried with `base_delay × 2^attempt` backoff |
+| `RuntimeError` (rate limit) | Retried with 4× longer delay to respect quota window |
+| Max attempts | `llm.max_retries` in `config/content.yaml` (default: 3) |
+
+Both `_call_anthropic` and `_call_openai` now pass their inner API call through
+`_call_with_retry`.  Added `max_retries: 3` to `config/content.yaml`.
+
+### Feature: Post/reply content archiving (`src/meo/state.py`, `posts.py`, `reviews.py`)
+
+**Problem**: After a post or reply was published, the only way to see what the LLM
+generated was to check Google manually.  `state.json` tracked dates and rotation
+history but not the actual text.
+
+**Fix**: Two new archiving subsystems in `state.py`:
+
+| Function | What it stores | Capacity |
+|---|---|---|
+| `record_post_content(store_key, text, theme, post_name)` | Date, theme, full post text, GBP resource name | Last 30 per store |
+| `get_post_history(store_key)` | Returns archived entries (most recent first) | — |
+| `record_reply_content(store_key, review_id, reviewer, stars, reply_text)` | Date, reviewer, star rating, full reply text | Last 50 per store |
+| `get_reply_history(store_key)` | Returns archived entries (most recent first) | — |
+
+Both functions are called automatically:
+- `posts.py` calls `record_post_content()` after every successful live post
+- `reviews.py` calls `record_reply_content()` after every successful live reply
+
+Neither is called in dry-run mode.
+
+### New CLI: `meo-report` (`src/meo/tools/report.py`)
+
+```bash
+meo-report                            # all stores
+meo-report --store the_body_kyoto     # single store
+meo-report --output logs/report.txt   # also save to file
+python -m meo.tools.report
+```
+
+Reads `state.json` and prints a formatted report:
+- Per store: last 5 posts (date, theme, 100-char preview, GBP resource name)
+- Per store: last 5 review replies (date, reviewer, star rating, 100-char preview)
+- Star ratings are rendered as ★ symbols
+
+### New CLI flag: `--force` (`src/meo/main.py`, `posts.py`)
+
+```bash
+python -m meo.main --force
+python -m meo.main --store the_body_kyoto --force
+```
+
+Bypasses the cadence guard (`should_post_today`) for manual re-runs — useful
+when a post failed partway through or you want to regenerate today's post.
+Dry-run already bypassed the guard; `--force` covers the live path only.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `config/content.yaml` | Added `llm.max_retries: 3` |
+| `src/meo/content.py` | `_call_with_retry()` helper; both providers use it |
+| `src/meo/state.py` | `record_post_content`, `get_post_history`, `record_reply_content`, `get_reply_history`, constants `_POST_HISTORY_SIZE=30` / `_REPLY_HISTORY_SIZE=50` |
+| `src/meo/posts.py` | Import + call `record_post_content`; add `force` param |
+| `src/meo/reviews.py` | Import + call `record_reply_content` in live reply path |
+| `src/meo/main.py` | `--force` argparse flag; passes `force=` to `run_post_for_store` |
+| `src/meo/tools/report.py` | New module: `run_report()`, `_format_store_section()`, `main()` |
+| `pyproject.toml` | Added `meo-report` script entry point |
+
+### New tests (+32 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_content.py` | 6 retry tests: `_call_with_retry` — succeeds immediately, succeeds on retry, raises after max attempts, no retry on EnvironmentError, sleeps between attempts, longer delay for rate limits |
+| `tests/test_state.py` | 11 archiving tests: post history (empty, store entry, ordering, cap, per-store isolation, None theme); reply history (empty, store entry, ordering, cap, per-store isolation) |
+| `tests/test_posts.py` | `test_record_post_content_called_with_correct_args`; `test_record_post_content_not_called_on_dry_run`; `test_force_flag_bypasses_cadence_guard`; autouse fixture `patch_record_post_content` (silences archiving in all tests) |
+| `tests/test_reviews.py` | `test_record_reply_content_called_after_live_reply`; `test_record_reply_content_not_called_on_dry_run`; autouse fixture `patch_record_reply_content` |
+| `tests/test_main.py` | `test_force_flag_forwarded_to_run_post_for_store`; updated `track_post` signatures to accept `force=False` |
+| `tests/test_report.py` | 9 new tests: `run_report` (store names, post history, reply history, empty placeholder, unknown store, filter); `main()` (exits 0, exits 1 on bad key, saves file with `--output`) |
+
+Total: **180/180 tests** (was 148).
 
 ---
 
