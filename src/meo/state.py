@@ -2,13 +2,14 @@
 
 State is stored in logs/state.json as a simple JSON object:
   {
-    "last_post":     {"the_body_kyoto": "2024-01-15", ...},
-    "recent_images": {"the_body_kyoto": ["file_id_1", "file_id_2"], ...},
-    "recent_themes": {"the_body_kyoto": ["季節のお手入れ情報", ...], ...}
+    "last_post":       {"the_body_kyoto": "2024-01-15", ...},
+    "recent_images":   {"the_body_kyoto": ["file_id_1", "file_id_2"], ...},
+    "recent_themes":   {"the_body_kyoto": ["季節のお手入れ情報", ...], ...},
+    "replied_reviews": {"the_body_kyoto": ["rev001", "rev002", ...], ...}
   }
 
 This file is NOT committed to git (covered by .gitignore logs/).
-It is written by the daily runner after each successful post.
+It is written by the daily runner after each successful post or reply.
 """
 
 from __future__ import annotations
@@ -215,3 +216,43 @@ def record_reply_content(
 def get_reply_history(store_key: str) -> list[dict]:
     """Return the archived reply history for store_key (most recent first)."""
     return list(_load().get("reply_history", {}).get(store_key, []))
+
+
+# ---------------------------------------------------------------------------
+# Replied review tracking — prevent double-replies on GBP propagation delay
+# ---------------------------------------------------------------------------
+
+# A reply posted via the GBP API can take several minutes to appear in
+# list_reviews(). If a second run fires before propagation completes, the
+# review still looks unreplied and the runner would try to reply again.
+# We track replied IDs locally so the second run skips them.
+#
+# 500 IDs × ~10 chars each ≈ 5 KB — well within JSON state file budget.
+_REPLIED_REVIEW_CAPACITY = 500
+
+
+def record_replied_review(store_key: str, review_id: str) -> None:
+    """Record that a reply was successfully posted for review_id.
+
+    Keeps the most recent _REPLIED_REVIEW_CAPACITY IDs so reviews.py can
+    skip reviews that were replied to in a previous run before GBP propagation
+    has updated the reviewReply field visible via list_reviews().
+    """
+    state = _load()
+    history: list[str] = (
+        state.setdefault("replied_reviews", {}).setdefault(store_key, [])
+    )
+    if review_id in history:
+        history.remove(review_id)
+    history.insert(0, review_id)
+    state["replied_reviews"][store_key] = history[:_REPLIED_REVIEW_CAPACITY]
+    _save(state)
+    logger.debug("Recorded replied review for %s: %s", store_key, review_id)
+
+
+def get_replied_reviews(store_key: str) -> list[str]:
+    """Return review IDs replied to locally for store_key (most recent first).
+
+    Returns an empty list if no history exists.
+    """
+    return list(_load().get("replied_reviews", {}).get(store_key, []))

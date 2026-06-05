@@ -33,6 +33,7 @@ meo-status = "meo.tools.status:main"
 meo-preview = "meo.tools.preview:main"
 meo-validate = "meo.tools.validate:main"
 meo-report = "meo.tools.report:main"
+meo-health = "meo.tools.health:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

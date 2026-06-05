@@ -12,6 +12,13 @@ def patch_record_reply_content(monkeypatch):
     monkeypatch.setattr("meo.reviews.record_reply_content", lambda *a, **kw: None)
 
 
+@pytest.fixture(autouse=True)
+def patch_replied_review_state(monkeypatch):
+    """Silence replied-review state I/O for all tests — guard is tested separately."""
+    monkeypatch.setattr("meo.reviews.get_replied_reviews", lambda *a: [])
+    monkeypatch.setattr("meo.reviews.record_replied_review", lambda *a: None)
+
+
 _STORE = {
     "key": "the_body_osaka_shinsaibashi",
     "name": "THE BODY 大阪 心斎橋店",
@@ -170,3 +177,39 @@ def test_record_reply_content_not_called_on_dry_run():
         run_reviews_for_store(_STORE, gbp, dry_run=True)
 
     mock_archive.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Duplicate-reply guard tests
+# ---------------------------------------------------------------------------
+
+def test_locally_replied_review_is_skipped():
+    """A review already in the local replied set must not be replied to again."""
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [_REVIEW_UNREPLIED]  # GBP still shows it unreplied
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.reviews.get_replied_reviews", return_value=["rev001"]):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    gbp.reply_to_review.assert_not_called()
+    assert result["replied"] == 0
+
+
+def test_record_replied_review_called_after_live_reply():
+    """record_replied_review must be called with store_key and review_id after a live reply."""
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [_REVIEW_UNREPLIED]
+    gbp.reply_to_review.return_value = {}
+    with patch("meo.reviews.generate_reply", return_value="返信テスト"), \
+         patch("meo.reviews.record_replied_review") as mock_guard:
+        run_reviews_for_store(_STORE, gbp, dry_run=False)
+    mock_guard.assert_called_once_with(_STORE["key"], "rev001")
+
+
+def test_record_replied_review_not_called_on_dry_run():
+    """Dry run must not update the local replied-review set."""
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [_REVIEW_UNREPLIED]
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.reviews.record_replied_review") as mock_guard:
+        run_reviews_for_store(_STORE, gbp, dry_run=True)
+    mock_guard.assert_not_called()

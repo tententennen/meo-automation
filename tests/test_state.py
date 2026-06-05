@@ -257,3 +257,47 @@ def test_record_reply_content_capped_at_limit(frozen_today):
 def test_reply_history_independent_per_store(frozen_today):
     state_mod.record_reply_content("store_a", "rev001", "A", "FIVE", "reply")
     assert state_mod.get_reply_history("store_b") == []
+
+
+# ---------------------------------------------------------------------------
+# Replied review tracking tests (duplicate-reply guard)
+# ---------------------------------------------------------------------------
+
+def test_get_replied_reviews_empty_when_no_history():
+    assert state_mod.get_replied_reviews("my_store") == []
+
+
+def test_record_replied_review_persists_and_is_retrievable():
+    state_mod.record_replied_review("my_store", "rev001")
+    assert state_mod.get_replied_reviews("my_store") == ["rev001"]
+
+
+def test_record_replied_review_most_recent_is_first():
+    state_mod.record_replied_review("my_store", "rev001")
+    state_mod.record_replied_review("my_store", "rev002")
+    ids = state_mod.get_replied_reviews("my_store")
+    assert ids[0] == "rev002"
+    assert ids[1] == "rev001"
+
+
+def test_record_replied_review_capped_at_capacity(monkeypatch):
+    monkeypatch.setattr(state_mod, "_REPLIED_REVIEW_CAPACITY", 3)
+    for i in range(5):
+        state_mod.record_replied_review("my_store", f"rev{i:03d}")
+    ids = state_mod.get_replied_reviews("my_store")
+    assert len(ids) == 3
+    assert ids[0] == "rev004"
+
+
+def test_record_replied_review_deduplicates_on_reuse():
+    state_mod.record_replied_review("my_store", "rev_A")
+    state_mod.record_replied_review("my_store", "rev_B")
+    state_mod.record_replied_review("my_store", "rev_A")  # re-record A
+    ids = state_mod.get_replied_reviews("my_store")
+    assert ids[0] == "rev_A"
+    assert ids.count("rev_A") == 1
+
+
+def test_replied_review_history_independent_per_store():
+    state_mod.record_replied_review("store_a", "rev001")
+    assert state_mod.get_replied_reviews("store_b") == []

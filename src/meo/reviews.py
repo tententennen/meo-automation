@@ -8,7 +8,7 @@ from typing import Any
 from . import config as cfg
 from .business_profile import BusinessProfileClient
 from .content import generate_reply
-from .state import record_reply_content
+from .state import get_replied_reviews, record_replied_review, record_reply_content
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,24 @@ def run_reviews_for_store(
     logger.info("[%s] Fetching reviews...", store_key)
     reviews = gbp.list_reviews(location_id)
     unreplied = [r for r in reviews if not _has_reply(r)]
-    unreplied_total = len(unreplied)  # save before the cap so skipped/deferred are accurate
+    gbp_skipped = len(reviews) - len(unreplied)  # reviews already replied on GBP
+
+    # Skip reviews already handled locally — guards against GBP propagation lag.
+    # A reply POSTed in a previous run may not yet appear in list_reviews(),
+    # making those reviews look unreplied. Checking our local set prevents
+    # double-replying when two runs fire within the same propagation window.
+    locally_replied = set(get_replied_reviews(store_key))
+    if locally_replied:
+        before_local = len(unreplied)
+        unreplied = [r for r in unreplied if _extract_review_id(r) not in locally_replied]
+        local_skip = before_local - len(unreplied)
+        if local_skip:
+            logger.info(
+                "[%s] %d review(s) skipped (replied locally, awaiting GBP propagation).",
+                store_key, local_skip,
+            )
+
+    unreplied_total = len(unreplied)  # save before the cap so deferred is accurate
     logger.info("[%s] %d unreplied review(s) of %d total.", store_key, unreplied_total, len(reviews))
 
     max_replies: int = cfg.content()["defaults"].get("max_replies_per_run", 10)
@@ -63,6 +80,7 @@ def run_reviews_for_store(
                 logger.info("[%s] DRY RUN — would reply to review %s:\n%s", store_key, review_id, reply_text)
             else:
                 gbp.reply_to_review(location_id, review_id, reply_text)
+                record_replied_review(store_key, review_id)
                 record_reply_content(
                     store_key,
                     review_id,
@@ -79,7 +97,7 @@ def run_reviews_for_store(
     return {
         "store_key": store_key,
         "replied": replied,
-        "skipped": len(reviews) - unreplied_total,   # already-replied reviews
+        "skipped": gbp_skipped,                       # already-replied on GBP
         "deferred": unreplied_total - len(unreplied), # capped by max_replies_per_run
         "errors": errors,
     }
