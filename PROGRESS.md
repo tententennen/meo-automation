@@ -1,6 +1,80 @@
 # PROGRESS
 
-## Status: All milestones complete — 180/180 tests green
+## Status: All milestones complete — 200/200 tests green
+
+---
+
+## Completed this run (run 15)
+
+### Fix: Duplicate-reply guard (`src/meo/state.py`, `reviews.py`)
+
+**Problem**: GBP's `list_reviews` can take several minutes to reflect a newly-posted
+reply.  If two runs fire within that window (e.g. the scheduled GitHub Actions job
+plus a manual `workflow_dispatch`), the second run sees the same reviews as
+unreplied and tries to reply again — causing duplicate owner replies or GBP 4xx
+errors on the second attempt.
+
+**Fix**: Added a local replied-review tracking set to `state.json`:
+
+| Function | Purpose |
+|---|---|
+| `record_replied_review(store_key, review_id)` | Persists after every live reply; capped at 500 IDs per store |
+| `get_replied_reviews(store_key)` | Returns the tracked set; checked before replying in `run_reviews_for_store()` |
+
+`reviews.py` now filters out reviews whose ID appears in the local set before
+entering the reply loop.  A log line at `INFO` level reports how many reviews were
+skipped for this reason.
+
+Not called in dry-run mode (consistent with all other state writes).
+
+### New CLI: `meo-health` (`src/meo/tools/health.py`)
+
+**Purpose**: Read-only connectivity check intended for first-time setup and after
+credential/config changes.  Runs before any live `meo-run` to confirm the Google
+APIs are reachable and the configured store IDs are valid.
+
+```bash
+meo-health                            # all stores
+meo-health --store the_body_kyoto     # single store
+```
+
+Per store, the tool checks (all read-only — no writes):
+- GBP API: calls `list_reviews()` on the configured `location_id`
+- Drive API: calls `list_images()` on the configured `drive_folder_id`
+
+Output:
+```
+=== MEO Health Check ===
+
+✓ [the_body_kyoto] THE BODY 京都店
+    ✓ gbp_list_reviews: OK (12 review(s))
+    ✓ drive_list_images: OK (8 image(s))
+
+All checks passed. Ready for a live run.
+```
+
+Unconfigured `drive_folder_id` is flagged with `!` (warning) but does not fail
+the check — posts can go out without photos.  Unconfigured `location_id` is a
+hard `✗` failure.  Exits 0 if all stores pass, 1 if any check fails.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | `_REPLIED_REVIEW_CAPACITY = 500`; `record_replied_review()`; `get_replied_reviews()`; updated module docstring |
+| `src/meo/reviews.py` | Import new state helpers; local-filter step before the reply loop; `record_replied_review()` called after each live reply |
+| `src/meo/tools/health.py` | New module: `run_health()`, `main()` |
+| `pyproject.toml` | Added `meo-health` script entry point |
+
+### New tests (+20 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_state.py` | 6 tests: empty history; persist/retrieve; most-recent-first ordering; cap at capacity; dedup on re-record; per-store isolation |
+| `tests/test_reviews.py` | `patch_replied_review_state` autouse fixture; `test_locally_replied_review_is_skipped`; `test_record_replied_review_called_after_live_reply`; `test_record_replied_review_not_called_on_dry_run` |
+| `tests/test_health.py` | 11 tests: GBP ok, GBP error, Drive error, unconfigured `location_id`, unconfigured `drive_folder_id` (warning-not-fatal), auth failure, store key filter; `main()` exits 0/1/auth-fail/unknown-key |
+
+Total: **200/200 tests** (was 180).
 
 ---
 
@@ -993,7 +1067,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (123/123).
+All code is complete and the test suite is green (200/200).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:
