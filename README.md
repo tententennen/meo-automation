@@ -48,8 +48,11 @@ All secrets come from environment variables — **never** committed to the repo.
 | `ANTHROPIC_API_KEY` | Yes | Anthropic Claude API key — https://console.anthropic.com/ |
 | `SLACK_WEBHOOK_URL` | No | Slack incoming webhook URL for run-completion notifications |
 
-For **development**, create a `.env` file (gitignored) with these values.
-For **production** (cron/GitHub Actions), set them as system/CI environment variables.
+For **development**, copy `.env.example` to `.env` (gitignored) and fill in your values:
+```bash
+cp .env.example .env
+```
+For **production** (cron/GitHub Actions/Docker), set them as system/CI environment variables.
 
 `SLACK_WEBHOOK_URL` is optional — if unset, no notification is sent.
 Create an incoming webhook at https://api.slack.com/messaging/webhooks and add the
@@ -117,12 +120,59 @@ Edit `config/content.yaml`:
 
 ## Scheduling (daily unattended run)
 
-**cron** (Linux/macOS):
+### GitHub Actions (included)
+
+`.github/workflows/daily_run.yml` runs automatically at 0 UTC (9 AM JST).
+Add secrets in **Settings → Secrets → Actions** — see PROGRESS.md § Needs Human Action.
+
+### cron on a VPS (Python)
+
 ```cron
-0 9 * * * cd /path/to/meo-automation && /path/to/venv/bin/python -m meo.main >> logs/cron.log 2>&1
+# Runs at 9 AM JST (0 UTC) — adjust to your local timezone
+0 0 * * * cd /path/to/meo-automation && /path/to/venv/bin/python -m meo.main >> logs/cron.log 2>&1
 ```
 
-**GitHub Actions**: add a workflow with `schedule: - cron: '0 0 * * *'` and store env vars as repository secrets.
+### Docker (self-hosted, recommended for VPS)
+
+```bash
+# 1. Fill in credentials
+cp .env.example .env && nano .env
+
+# 2. Build image
+docker compose build
+
+# 3. Dry run (safe — reads config, logs intent, no API writes)
+docker compose run --rm meo
+
+# 4. Live run
+docker compose run --rm meo python -m meo.main
+
+# 5. Schedule with cron on the host
+# 0 0 * * * cd /path/to/meo-automation && docker compose run --rm --no-deps meo python -m meo.main >> /var/log/meo-cron.log 2>&1
+```
+
+State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and persists across container restarts.
+
+---
+
+## Operator CLI tools
+
+| Command | Purpose |
+|---|---|
+| `meo-run` | Run the full automation (posts + review replies) |
+| `meo-status` | Show config/env readiness summary |
+| `meo-health` | Read-only API connectivity check per store |
+| `meo-validate` | Validate config files without running |
+| `meo-preview` | Generate sample post/reply text via LLM (no Google API needed) |
+| `meo-report` | Print recent post and reply history from state.json |
+| `meo-export posts` | Export post history to CSV (for Excel / Google Sheets) |
+| `meo-export replies` | Export review-reply history to CSV |
+
+```bash
+# Examples
+meo-export posts --output posts.csv
+meo-export replies --store the_body_kyoto --output kyoto_replies.csv
+```
 
 ---
 

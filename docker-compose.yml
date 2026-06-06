@@ -1,0 +1,42 @@
+version: "3.9"
+
+# MEO Automation — Docker Compose for VPS / self-hosted deployment
+#
+# Quick start:
+#   1. cp .env.example .env && nano .env   # fill in all required values
+#   2. docker compose build
+#   3. docker compose run --rm meo         # dry run (safe)
+#   4. docker compose run --rm meo python -m meo.main   # live run
+#
+# For unattended daily runs, add a cron job on the host:
+#   0 0 * * * cd /path/to/meo-automation && docker compose run --rm --no-deps meo python -m meo.main >> /var/log/meo-cron.log 2>&1
+# (0 UTC = 9 AM JST)
+
+services:
+  meo:
+    build: .
+    env_file:
+      - .env                  # copy .env.example → .env and fill in values
+    volumes:
+      - meo_logs:/app/logs    # persists logs/state.json across runs
+    # Default: dry run — override on the command line for a live run:
+    #   docker compose run --rm meo python -m meo.main
+    command: ["--dry-run"]
+
+  # Convenience: run any meo-* CLI tool, e.g.:
+  #   docker compose run --rm tools meo-status
+  #   docker compose run --rm tools meo-preview
+  #   docker compose run --rm tools meo-export posts
+  tools:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - meo_logs:/app/logs
+    entrypoint: []
+    command: ["meo-status"]
+
+volumes:
+  meo_logs:
+    # Docker named volume — data persists on the host between container runs.
+    # To inspect: docker volume inspect meo-automation_meo_logs

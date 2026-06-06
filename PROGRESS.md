@@ -1,6 +1,100 @@
 # PROGRESS
 
-## Status: All milestones complete — 200/200 tests green
+## Status: All milestones complete — 221/221 tests green
+
+---
+
+## Completed this run (run 16)
+
+### New: Docker deployment support (`Dockerfile`, `docker-compose.yml`)
+
+Operators who prefer self-hosted VPS deployment over GitHub Actions can now run
+the tool in Docker without modifying any code.
+
+**Files added:**
+
+| File | Purpose |
+|---|---|
+| `Dockerfile` | Slim Python 3.11 image; installs cffi + all dependencies; mounts `/app/logs` as a volume |
+| `docker-compose.yml` | Defines `meo` service (daily run) and `tools` service (one-shot CLI commands); maps `meo_logs` named volume for state persistence |
+
+**Deployment workflow:**
+```bash
+cp .env.example .env    # fill in credentials
+docker compose build
+docker compose run --rm meo                       # dry run (safe)
+docker compose run --rm meo python -m meo.main    # live run
+# Add to host cron: 0 0 * * * docker compose run --rm --no-deps meo python -m meo.main
+```
+
+The `meo_logs` Docker named volume persists `logs/state.json` across container
+restarts, so the duplicate-post guard and rotation history work correctly.
+
+### New: `.env.example` credential template
+
+Added `.env.example` at the repo root — a documented template listing all
+required and optional environment variables with descriptions and setup links.
+
+Operators copy it once (`cp .env.example .env`) instead of consulting the README
+for each variable name. The `.gitignore` was updated to carve out `.env.example`
+from the existing `.env.*` rule so the template is tracked.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `.env.example` | New: documents all env vars with comments and links |
+| `.gitignore` | Added `!.env.example` exception so the template is committed |
+
+### New CLI: `meo-export` (`src/meo/tools/export.py`)
+
+Exports the content archive from `state.json` to CSV for spreadsheet review.
+
+```bash
+meo-export posts                                  # all stores → stdout
+meo-export replies                                # all stores → stdout
+meo-export posts --store the_body_kyoto           # single store
+meo-export posts --output posts.csv               # write file (UTF-8-BOM for Excel)
+meo-export replies --store the_body_kyoto --output kyoto_replies.csv
+python -m meo.tools.export posts
+```
+
+**CSV schemas:**
+
+*posts*: `store_key, store_name, date, theme, text, post_name`
+
+*replies*: `store_key, store_name, date, reviewer, stars, review_id, reply`
+
+**Design decisions:**
+- Files are written with a UTF-8 BOM (`utf-8-sig`) so Excel on Windows/macOS
+  auto-detects the encoding without requiring a manual import step.
+- Stdout output uses plain UTF-8 (no BOM) for piping/shell use.
+- Unknown `--store` key exits 1 with a clear error listing valid keys.
+- No data in state.json exits 0 with a helpful message (not an error — the tool
+  may not have run yet in live mode).
+- `dotenv` is loaded if present, consistent with all other CLI tools.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/export.py` | New module: `export_posts()`, `export_replies()`, `_write_csv()`, `main()` |
+| `pyproject.toml` | Added `meo-export` script entry point |
+
+### Updated: README
+
+Added:
+- Docker deployment section (build → dry run → live run → cron)
+- Operator CLI tools table listing all 8 CLI commands with one-line descriptions
+- `.env.example` reference in Environment Variables section
+
+### New tests (+21 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_export.py` | `TestExportPosts` (5); `TestExportReplies` (3); `TestWriteCsv` (4); `TestMain` (9) |
+
+Total: **221/221 tests** (was 200).
 
 ---
 
@@ -1067,17 +1161,23 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (200/200).
+All code is complete and the test suite is green (221/221).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:
-1. Run `python -m meo.tools.status` to check config + env var readiness.
-2. Run `pytest` to confirm all 123 tests still pass.
+1. Run `meo-status` to check config + env var readiness.
+2. Run `pytest` to confirm all tests pass.
 3. **Run `meo-preview`** to verify LLM output quality before any live Google API calls.
    This requires only `ANTHROPIC_API_KEY` — no Google credentials needed yet.
 4. Run `python -m meo.main --store the_body_kyoto --dry-run` to verify single-store flow.
 5. Run `python -m meo.main --dry-run` for all stores.
-6. Add GitHub Actions secrets (Step 7) to activate the daily scheduler.
-   - `SLACK_WEBHOOK_URL` is optional but highly recommended so you get a Slack message after each run.
+6. Choose a deployment method:
+   - **GitHub Actions** (included): add secrets in Step 7 to activate the daily scheduler.
+   - **Docker / VPS**: `cp .env.example .env && docker compose build && docker compose run --rm meo`
+   - **cron (bare Python)**: see README § Scheduling.
+   - `SLACK_WEBHOOK_URL` is optional but recommended for run-completion alerts.
 7. Remove `--dry-run` or trigger the workflow without the flag for the first live run.
-8. After the first live post, verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO in `business_profile.py` once confirmed.
+8. After the first live post, run `meo-export posts --output posts.csv` to confirm the
+   content archive is working and review AI-generated text quality in the CSV.
+9. Verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO
+   in `business_profile.py` once confirmed.
