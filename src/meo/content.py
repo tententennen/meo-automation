@@ -116,6 +116,25 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     return text
 
 
+_STAR_LABELS: dict[str, str] = {
+    "ONE":   "★☆☆☆☆（1/5）",
+    "TWO":   "★★☆☆☆（2/5）",
+    "THREE": "★★★☆☆（3/5）",
+    "FOUR":  "★★★★☆（4/5）",
+    "FIVE":  "★★★★★（5/5）",
+}
+
+
+def _star_label(rating: str) -> str:
+    """Convert a GBP API star rating string to a visual star label.
+
+    GBP returns ratings as uppercase English words ("FIVE", "THREE", etc.).
+    Rendering them as ★ symbols gives the LLM clearer signal about the
+    sentiment without requiring it to infer meaning from English words.
+    """
+    return _STAR_LABELS.get(rating, rating)
+
+
 def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     """Generate a Japanese reply to a Google review.
 
@@ -138,6 +157,12 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     comment = review.get("comment", "")
     date_context = _jst_date_context()
 
+    # Render the rating as ★ symbols so the LLM has unambiguous sentiment signal.
+    # For star-only reviews (no written comment), tell the LLM explicitly so it
+    # doesn't generate a reply that references non-existent review text.
+    star_display = _star_label(star_rating)
+    comment_text = comment if comment else "（コメントなし）"
+
     system = (
         f"あなたは{store['name']}のオーナーとして、Googleレビューへ誠実かつ丁寧に返信するオーナーです。"
         f"ブランドのトーン（{tone_profile['tone']}）を守り、日本語で自然な返信を行います。"
@@ -147,14 +172,15 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
         f"現在の日付・季節: {date_context}\n"
         f"禁止ワード: {banned}\n"
         f"レビュアー名: {reviewer_name}\n"
-        f"評価: {star_rating}\n"
-        f"レビュー内容: {comment}\n"
+        f"評価: {star_display}\n"
+        f"レビュー内容: {comment_text}\n"
         f"条件:\n"
         f"- 日本語で書く\n"
         f"- {max_chars}文字以内\n"
         f"- 感謝の気持ちを伝える\n"
         f"- 低評価の場合は誠実にお詫びし、改善への意欲を示す\n"
         f"- 高評価の場合は喜びを表現し、また来てほしいと伝える\n"
+        f"- レビュー内容がコメントなしの場合は、星評価に合わせた自然な返信をする\n"
         f"- 必要に応じて季節のご挨拶を添える\n"
         f"返信文のみを出力してください（説明文不要）。"
     )

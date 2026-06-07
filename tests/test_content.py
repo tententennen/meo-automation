@@ -325,6 +325,67 @@ def test_call_with_retry_sleeps_between_attempts():
     assert mock_sleep.call_count == 2  # slept after attempt 1 and 2
 
 
+# ---------------------------------------------------------------------------
+# _star_label() tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("rating,expected", [
+    ("ONE",   "★☆☆☆☆（1/5）"),
+    ("TWO",   "★★☆☆☆（2/5）"),
+    ("THREE", "★★★☆☆（3/5）"),
+    ("FOUR",  "★★★★☆（4/5）"),
+    ("FIVE",  "★★★★★（5/5）"),
+])
+def test_star_label_known_ratings(rating, expected):
+    assert content._star_label(rating) == expected
+
+
+def test_star_label_unknown_returns_raw():
+    assert content._star_label("UNKNOWN_RATING") == "UNKNOWN_RATING"
+
+
+def test_generate_reply_uses_star_label_in_prompt():
+    """Star rating must appear as ★ symbols in the LLM prompt."""
+    review = dict(_REVIEW, starRating="THREE")
+    with patch("meo.content._call_llm", return_value="返信テキスト") as mock_llm:
+        content.generate_reply(review, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "★★★☆☆" in user_prompt
+    assert "THREE" not in user_prompt  # raw API string must not leak through
+
+
+def test_generate_reply_empty_comment_shows_no_comment_label():
+    """A review with an empty comment string shows 'コメントなし' in the prompt."""
+    review = dict(_REVIEW, comment="")
+    with patch("meo.content._call_llm", return_value="返信テキスト") as mock_llm:
+        content.generate_reply(review, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "コメントなし" in user_prompt
+
+
+def test_generate_reply_missing_comment_key_shows_no_comment_label():
+    """A review dict without a 'comment' key at all shows 'コメントなし'."""
+    review = {k: v for k, v in _REVIEW.items() if k != "comment"}
+    with patch("meo.content._call_llm", return_value="返信テキスト") as mock_llm:
+        content.generate_reply(review, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "コメントなし" in user_prompt
+
+
+def test_generate_reply_nonempty_comment_is_passed_through():
+    """When a review has a comment, the actual comment text appears in the prompt."""
+    review = dict(_REVIEW, comment="とても良い体験でした。")
+    with patch("meo.content._call_llm", return_value="返信テキスト") as mock_llm:
+        content.generate_reply(review, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "とても良い体験でした。" in user_prompt
+    # The レビュー内容 line must contain the real text, not the no-comment placeholder.
+    for line in user_prompt.splitlines():
+        if line.startswith("レビュー内容:"):
+            assert "（コメントなし）" not in line
+            break
+
+
 def test_call_with_retry_rate_limit_uses_longer_delay():
     """Rate-limit errors must get a longer backoff than generic API errors."""
     def make_fn(error_msg):

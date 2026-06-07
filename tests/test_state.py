@@ -301,3 +301,84 @@ def test_record_replied_review_deduplicates_on_reuse():
 def test_replied_review_history_independent_per_store():
     state_mod.record_replied_review("store_a", "rev001")
     assert state_mod.get_replied_reviews("store_b") == []
+
+
+# ---------------------------------------------------------------------------
+# State reset helper tests (clear_* functions)
+# ---------------------------------------------------------------------------
+
+def test_clear_post_guard_specific_store(frozen_today):
+    state_mod.record_post("store_a")
+    state_mod.record_post("store_b")
+    cleared = state_mod.clear_post_guard("store_a")
+    assert cleared == ["store_a"]
+    assert state_mod.should_post_today("store_a") is True
+    assert state_mod.should_post_today("store_b") is False  # untouched
+
+
+def test_clear_post_guard_all_stores(frozen_today):
+    state_mod.record_post("store_a")
+    state_mod.record_post("store_b")
+    cleared = state_mod.clear_post_guard()
+    assert set(cleared) == {"store_a", "store_b"}
+    assert state_mod.should_post_today("store_a") is True
+    assert state_mod.should_post_today("store_b") is True
+
+
+def test_clear_post_guard_missing_store_returns_empty():
+    cleared = state_mod.clear_post_guard("nonexistent_store")
+    assert cleared == []
+
+
+def test_clear_image_history_specific_store():
+    state_mod.record_image("store_a", "img1")
+    state_mod.record_image("store_b", "img2")
+    cleared = state_mod.clear_image_history("store_a")
+    assert cleared == ["store_a"]
+    assert state_mod.get_recent_images("store_a") == []
+    assert state_mod.get_recent_images("store_b") == ["img2"]  # untouched
+
+
+def test_clear_image_history_all_stores():
+    state_mod.record_image("store_a", "img1")
+    state_mod.record_image("store_b", "img2")
+    cleared = state_mod.clear_image_history()
+    assert set(cleared) == {"store_a", "store_b"}
+    assert state_mod.get_recent_images("store_a") == []
+    assert state_mod.get_recent_images("store_b") == []
+
+
+def test_clear_theme_history_specific_store():
+    state_mod.record_theme("store_a", "テーマA")
+    state_mod.record_theme("store_b", "テーマB")
+    cleared = state_mod.clear_theme_history("store_a")
+    assert cleared == ["store_a"]
+    assert state_mod.get_recent_themes("store_a") == []
+    assert state_mod.get_recent_themes("store_b") == ["テーマB"]  # untouched
+
+
+def test_clear_theme_history_all_stores():
+    state_mod.record_theme("store_a", "テーマA")
+    state_mod.record_theme("store_b", "テーマB")
+    cleared = state_mod.clear_theme_history()
+    assert set(cleared) == {"store_a", "store_b"}
+    assert state_mod.get_recent_themes("store_a") == []
+    assert state_mod.get_recent_themes("store_b") == []
+
+
+def test_clear_replied_reviews_specific_store():
+    state_mod.record_replied_review("store_a", "rev1")
+    state_mod.record_replied_review("store_b", "rev2")
+    cleared = state_mod.clear_replied_reviews("store_a")
+    assert cleared == ["store_a"]
+    assert state_mod.get_replied_reviews("store_a") == []
+    assert state_mod.get_replied_reviews("store_b") == ["rev2"]  # untouched
+
+
+def test_clear_replied_reviews_all_stores():
+    state_mod.record_replied_review("store_a", "rev1")
+    state_mod.record_replied_review("store_b", "rev2")
+    cleared = state_mod.clear_replied_reviews()
+    assert set(cleared) == {"store_a", "store_b"}
+    assert state_mod.get_replied_reviews("store_a") == []
+    assert state_mod.get_replied_reviews("store_b") == []

@@ -1,6 +1,93 @@
 # PROGRESS
 
-## Status: All milestones complete — 221/221 tests green
+## Status: All milestones complete — 255/255 tests green
+
+---
+
+## Completed this run (run 17)
+
+### New CLI: `meo-reset` (`src/meo/tools/reset.py`)
+
+Operators can now selectively clear parts of `state.json` without editing the
+file manually.  Useful for recovery after a failed post, after uploading new
+Drive photos, or after editing `config/content.yaml` themes.
+
+```bash
+meo-reset post-guard                           # clear "already posted today" guard for all stores
+meo-reset post-guard --store the_body_kyoto    # single store
+meo-reset image-history                        # forget recently-used Drive images (after new uploads)
+meo-reset theme-history                        # forget recently-used themes (after editing content.yaml)
+meo-reset replied-reviews                      # reset local replied-review tracking set
+meo-reset all                                  # wipe all of the above (all stores)
+meo-reset all --store mybear_studio_kyoto      # wipe all state for one store
+python -m meo.tools.reset post-guard
+```
+
+| Subcommand       | What it clears | Why you'd use it |
+|---|---|---|
+| `post-guard`      | `last_post` date per store | Run failed mid-post; want next run to retry without `--force` |
+| `image-history`   | `recent_images` list | Uploaded new photos; want them treated as fresh immediately |
+| `theme-history`   | `recent_themes` list | Changed theme list in `content.yaml`; old themes polluting rotation |
+| `replied-reviews` | `replied_reviews` set | Clearing the propagation-lag safety net (safe — GBP stays authoritative) |
+| `all`             | All of the above | Complete reset for a store or the whole tool |
+
+**Design decisions:**
+- `--store KEY` limits to one store; omitting it applies to all stores.
+- `run_reset()` (the library function) accepts any key — it returns `[]` for
+  stores with no data and does not raise.  Only the CLI validates the key
+  against `stores.yaml`.
+- No `--confirm` flag: each subcommand is targeted and reversible (a new post
+  or reply run repopulates state).  The docstring and `--help` text make the
+  scope clear.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/reset.py` | New module: `run_reset()`, `main()` |
+| `src/meo/state.py` | `clear_post_guard()`, `clear_image_history()`, `clear_theme_history()`, `clear_replied_reviews()` |
+| `pyproject.toml` | Added `meo-reset` script entry point |
+
+### Improvement: star-rating rendering in review reply prompts (`src/meo/content.py`)
+
+**Problem**: `generate_reply()` forwarded the GBP API's raw star-rating string
+(`"FIVE"`, `"THREE"`, etc.) directly into the LLM prompt.  The LLM had to
+infer both sentiment and intensity from an uppercase English word — a
+sub-optimal signal for a Japanese-language reply generator.
+
+Additionally, star-only reviews (no written comment — valid in GBP) caused the
+prompt to contain a blank `レビュー内容:` line.  The LLM could not distinguish
+a genuinely empty review from a missing field and sometimes generated a reply
+that referenced non-existent review text.
+
+**Fix**: Added `_star_label()` helper and updated the `generate_reply()` prompt:
+
+| Before | After |
+|---|---|
+| `評価: FIVE` | `評価: ★★★★★（5/5）` |
+| `評価: THREE` | `評価: ★★★☆☆（3/5）` |
+| `レビュー内容: ` | `レビュー内容: （コメントなし）` |
+
+The `_star_label()` mapping covers all five GBP star levels; unrecognised
+strings pass through unchanged (forward-compatible).  A new condition line
+in the prompt instructs the LLM to base its reply on the star rating alone
+when no comment is present.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/content.py` | `_STAR_LABELS` dict; `_star_label()` helper; updated `generate_reply()` prompt |
+
+### New tests (+34 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_state.py` | 10 tests for `clear_post_guard`, `clear_image_history`, `clear_theme_history`, `clear_replied_reviews` — specific store, all stores, missing key |
+| `tests/test_reset.py` | 15 new tests: `run_reset` (post-guard all/specific, image-history, theme-history, replied-reviews, all, all-specific-store, nonexistent key, empty state); `main()` (exits 0, all exits 0, unknown store exits 1, specific store output, nothing-to-clear) |
+| `tests/test_content.py` | 9 new tests: `_star_label` (5 parametrised ratings + unknown passthrough); `generate_reply` (star label in prompt, raw string absent, empty comment shows placeholder, missing comment key shows placeholder, real comment passed through) |
+
+Total: **255/255 tests** (was 221).
 
 ---
 

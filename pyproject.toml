@@ -35,6 +35,7 @@ meo-validate = "meo.tools.validate:main"
 meo-report = "meo.tools.report:main"
 meo-health = "meo.tools.health:main"
 meo-export = "meo.tools.export:main"
+meo-reset = "meo.tools.reset:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -256,3 +256,113 @@ def get_replied_reviews(store_key: str) -> list[str]:
     Returns an empty list if no history exists.
     """
     return list(_load().get("replied_reviews", {}).get(store_key, []))
+
+
+# ---------------------------------------------------------------------------
+# State reset helpers — used by the meo-reset CLI tool
+# ---------------------------------------------------------------------------
+
+def clear_post_guard(store_key: str | None = None) -> list[str]:
+    """Clear the last_post date guard for one or all stores.
+
+    After clearing, should_post_today() returns True for the affected store(s)
+    so the next run will post even if the cadence window has not elapsed.
+    Useful after a failed live post or to force regeneration without --force.
+
+    Args:
+        store_key: Clear only this store's guard.  Clears all stores when None.
+
+    Returns:
+        List of store keys whose guard was cleared.
+    """
+    state = _load()
+    section: dict[str, Any] = state.get("last_post", {})
+    if store_key is not None:
+        cleared = [store_key] if store_key in section else []
+        section.pop(store_key, None)
+    else:
+        cleared = list(section.keys())
+        section.clear()
+    state["last_post"] = section
+    _save(state)
+    logger.debug("Cleared post guard for: %s", cleared or "none")
+    return cleared
+
+
+def clear_image_history(store_key: str | None = None) -> list[str]:
+    """Clear the Drive image rotation history for one or all stores.
+
+    Useful after uploading new photos to a Drive folder — old IDs in the
+    rotation list would deprioritise the new images until they aged out.
+
+    Args:
+        store_key: Clear only this store's history.  Clears all when None.
+
+    Returns:
+        List of store keys whose image history was cleared.
+    """
+    state = _load()
+    section: dict[str, Any] = state.get("recent_images", {})
+    if store_key is not None:
+        cleared = [store_key] if store_key in section else []
+        section.pop(store_key, None)
+    else:
+        cleared = list(section.keys())
+        section.clear()
+    state["recent_images"] = section
+    _save(state)
+    logger.debug("Cleared image history for: %s", cleared or "none")
+    return cleared
+
+
+def clear_theme_history(store_key: str | None = None) -> list[str]:
+    """Clear the post theme rotation history for one or all stores.
+
+    Useful after editing the theme list in content.yaml — stale theme names
+    in the rotation list could otherwise deprioritise the new ones.
+
+    Args:
+        store_key: Clear only this store's history.  Clears all when None.
+
+    Returns:
+        List of store keys whose theme history was cleared.
+    """
+    state = _load()
+    section: dict[str, Any] = state.get("recent_themes", {})
+    if store_key is not None:
+        cleared = [store_key] if store_key in section else []
+        section.pop(store_key, None)
+    else:
+        cleared = list(section.keys())
+        section.clear()
+    state["recent_themes"] = section
+    _save(state)
+    logger.debug("Cleared theme history for: %s", cleared or "none")
+    return cleared
+
+
+def clear_replied_reviews(store_key: str | None = None) -> list[str]:
+    """Clear the local replied-review tracking set for one or all stores.
+
+    The tracking set prevents double-replies during GBP propagation lag (the
+    window between posting a reply and list_reviews() reflecting it).  Clearing
+    it is safe — GBP's own reviewReply field remains the authoritative source.
+
+    Args:
+        store_key: Clear only this store's tracking set.  Clears all when None.
+
+    Returns:
+        List of store keys whose tracking set was cleared.
+    """
+    state = _load()
+    section: dict[str, Any] = state.get("replied_reviews", {})
+    if store_key is not None:
+        cleared = [store_key] if store_key in section else []
+        section.pop(store_key, None)
+    else:
+        cleared = list(section.keys())
+        section.clear()
+    state["replied_reviews"] = section
+    _save(state)
+    logger.debug("Cleared replied reviews for: %s", cleared or "none")
+    return cleared
