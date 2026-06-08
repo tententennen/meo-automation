@@ -409,3 +409,46 @@ def test_call_with_retry_rate_limit_uses_longer_delay():
     assert len(rate_delays) == 1
     assert len(generic_delays) == 1
     assert rate_delays[0] > generic_delays[0]
+
+
+# ---------------------------------------------------------------------------
+# Banned-word detection tests
+# ---------------------------------------------------------------------------
+
+def test_check_banned_words_finds_match():
+    found = content._check_banned_words("激安キャンペーン中！", ["激安", "最安値"])
+    assert found == ["激安"]
+
+
+def test_check_banned_words_case_insensitive():
+    found = content._check_banned_words("SALE 100%保証品質", ["100%保証"])
+    assert "100%保証" in found
+
+
+def test_check_banned_words_returns_empty_when_no_match():
+    found = content._check_banned_words("春のキャンペーン開催中です！", ["激安", "最安値"])
+    assert found == []
+
+
+def test_generate_post_logs_warning_when_banned_word_found(caplog):
+    import logging
+    with _mock_llm("激安クーポンあり！"):
+        with caplog.at_level(logging.WARNING, logger="meo.content"):
+            content.generate_post(_STORE)
+    assert any("激安" in r.message for r in caplog.records)
+
+
+def test_generate_post_no_warning_when_no_banned_word(caplog):
+    import logging
+    with _mock_llm("春のキャンペーンを開催中です！"):
+        with caplog.at_level(logging.WARNING, logger="meo.content"):
+            content.generate_post(_STORE)
+    assert not any("banned word" in r.message for r in caplog.records)
+
+
+def test_generate_reply_logs_warning_when_banned_word_found(caplog):
+    import logging
+    with _mock_llm("激安サービスをご利用ください"):
+        with caplog.at_level(logging.WARNING, logger="meo.content"):
+            content.generate_reply(_REVIEW, _STORE)
+    assert any("激安" in r.message for r in caplog.records)

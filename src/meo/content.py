@@ -48,6 +48,17 @@ def _jst_date_context() -> str:
     return f"{now.year}年{now.month}月{now.day}日（{_season(now.month)}）"
 
 
+def _check_banned_words(text: str, banned: list[str]) -> list[str]:
+    """Return any banned words that appear in the generated text (case-insensitive).
+
+    The LLM is instructed to avoid these words, but may occasionally include them.
+    Callers log a WARNING so the operator can decide whether to adjust the config or
+    re-generate.  The text is returned unchanged — banning is advisory, not a hard
+    failure, since truncating or mangling the text would produce worse output.
+    """
+    return [w for w in banned if w.lower() in text.lower()]
+
+
 def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> str:
     """Generate a Japanese 最新情報 post body for the given store.
 
@@ -113,6 +124,13 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     text = text.strip()
     if len(text) > max_chars:
         text = text[:max_chars]
+    found = _check_banned_words(text, conf.get("banned_words", []))
+    if found:
+        logger.warning(
+            "[%s] Generated post contains banned word(s): %s. "
+            "Adjust config/content.yaml banned_words or themes if this recurs.",
+            store.get("key", "?"), found,
+        )
     return text
 
 
@@ -189,6 +207,13 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     text = text.strip()
     if len(text) > max_chars:
         text = text[:max_chars]
+    found = _check_banned_words(text, conf.get("banned_words", []))
+    if found:
+        logger.warning(
+            "[%s] Generated reply contains banned word(s): %s. "
+            "Adjust config/content.yaml banned_words if this recurs.",
+            store.get("key", "?"), found,
+        )
     return text
 
 

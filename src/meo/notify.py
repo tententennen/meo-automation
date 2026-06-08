@@ -71,10 +71,13 @@ def _format_message(results: list[dict[str, Any]], *, dry_run: bool) -> str:
         if reviews:
             replied = reviews.get("replied", 0)
             deferred = reviews.get("deferred", 0)
+            manual = reviews.get("manual", 0)
             rev_errors = reviews.get("errors", [])
             rev_part = f"replies: {replied}"
             if deferred:
                 rev_part += f", {deferred} deferred"
+            if manual:
+                rev_part += f", {manual} need manual reply"
             if rev_errors:
                 rev_part += f", {len(rev_errors)} error(s)"
                 had_error = True

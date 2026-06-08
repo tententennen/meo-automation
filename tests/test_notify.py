@@ -128,6 +128,32 @@ def test_webhook_http_error_does_not_raise(monkeypatch):
         send_run_summary([], dry_run=False)  # must not raise
 
 
+def test_format_manual_reviews_shown():
+    """Manual reviews (held by star threshold) must appear in the Slack message."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 3, "deferred": 0, "manual": 2, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "2 need manual reply" in msg
+
+
+def test_format_manual_reviews_absent_when_zero():
+    """When manual==0, the 'need manual reply' phrase must not appear."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 3, "deferred": 0, "manual": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "need manual reply" not in msg
+
+
 def test_payload_contains_store_key(monkeypatch):
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
     mock_resp = MagicMock()

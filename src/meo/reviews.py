@@ -64,6 +64,30 @@ def run_reviews_for_store(
         )
         unreplied = unreplied[:max_replies]
 
+    # --- Star-rating threshold --- #
+    # Reviews below min_star_autoreply are held for manual handling instead of
+    # receiving an AI-generated reply.  Default 1 = reply to everything.
+    min_star: int = cfg.content()["defaults"].get("min_star_autoreply", 1)
+    manual: list[dict[str, Any]] = []
+    if min_star > 1:
+        auto_reply: list[dict[str, Any]] = []
+        for r in unreplied:
+            if _star_to_int(r.get("starRating", "THREE")) < min_star:
+                manual.append(r)
+            else:
+                auto_reply.append(r)
+        if manual:
+            logger.info(
+                "[%s] %d review(s) held for manual reply (below min_star_autoreply=%d): %s",
+                store_key, len(manual), min_star,
+                [
+                    f"{r.get('reviewer', {}).get('displayName', '?')} "
+                    f"({r.get('starRating', '?')}★)"
+                    for r in manual
+                ],
+            )
+        unreplied = auto_reply
+
     replied = 0
     errors: list[str] = []
 
@@ -99,8 +123,19 @@ def run_reviews_for_store(
         "replied": replied,
         "skipped": gbp_skipped,                       # already-replied on GBP
         "deferred": unreplied_total - len(unreplied), # capped by max_replies_per_run
+        "manual": len(manual),                        # held for manual reply (below star threshold)
         "errors": errors,
     }
+
+
+_STAR_VALUES: dict[str, int] = {
+    "ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
+}
+
+
+def _star_to_int(rating: str) -> int:
+    """Convert a GBP star-rating string to an integer (1–5). Unknown → 3."""
+    return _STAR_VALUES.get(rating.upper(), 3)
 
 
 def _has_reply(review: dict[str, Any]) -> bool:

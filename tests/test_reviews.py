@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 
-from meo.reviews import run_reviews_for_store, _has_reply, _extract_review_id
+from meo.reviews import run_reviews_for_store, _has_reply, _extract_review_id, _star_to_int
 
 
 @pytest.fixture(autouse=True)
@@ -213,3 +213,87 @@ def test_record_replied_review_not_called_on_dry_run():
          patch("meo.reviews.record_replied_review") as mock_guard:
         run_reviews_for_store(_STORE, gbp, dry_run=True)
     mock_guard.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Star-threshold (min_star_autoreply) tests
+# ---------------------------------------------------------------------------
+
+def test_star_to_int_known_values():
+    assert _star_to_int("ONE") == 1
+    assert _star_to_int("TWO") == 2
+    assert _star_to_int("THREE") == 3
+    assert _star_to_int("FOUR") == 4
+    assert _star_to_int("FIVE") == 5
+
+
+def test_star_to_int_unknown_defaults_to_three():
+    assert _star_to_int("") == 3
+    assert _star_to_int("UNKNOWN") == 3
+
+
+def test_low_star_review_held_for_manual_when_threshold_set():
+    """A 1★ review must not be auto-replied when min_star_autoreply=3."""
+    gbp = MagicMock()
+    low_star_review = {
+        "name": "accounts/1/locations/1/reviews/rev_low",
+        "reviewId": "rev_low",
+        "reviewer": {"displayName": "不満なお客様"},
+        "starRating": "ONE",
+        "comment": "最悪でした。",
+    }
+    gbp.list_reviews.return_value = [low_star_review, _REVIEW_UNREPLIED]  # FOUR = above threshold
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3}}
+    with patch("meo.reviews.generate_reply", return_value="返信") as mock_gen, \
+         patch("meo.config.content", return_value=conf):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    # Only the FOUR-star review should have been replied to
+    assert result["replied"] == 1
+    assert result["manual"] == 1
+    mock_gen.call_count == 1  # only called for the FOUR-star review
+
+
+def test_manual_zero_when_threshold_is_one():
+    """Default threshold (1) means all unreplied reviews are auto-replied; manual==0."""
+    gbp = MagicMock()
+    low_star_review = {
+        "name": "accounts/1/locations/1/reviews/rev_low",
+        "reviewId": "rev_low",
+        "reviewer": {"displayName": "不満なお客様"},
+        "starRating": "ONE",
+        "comment": "最悪でした。",
+    }
+    gbp.list_reviews.return_value = [low_star_review]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    assert result["manual"] == 0
+    assert result["replied"] == 1
+
+
+def test_all_reviews_held_when_all_below_threshold():
+    """When every unreplied review is below the threshold, replied==0, manual==N."""
+    gbp = MagicMock()
+    reviews = [
+        {
+            "name": f"accounts/1/locations/1/reviews/rev{i}",
+            "reviewId": f"rev{i}",
+            "reviewer": {"displayName": f"User{i}"},
+            "starRating": "TWO",
+            "comment": f"Bad {i}",
+        }
+        for i in range(3)
+    ]
+    gbp.list_reviews.return_value = reviews
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 4}}
+    with patch("meo.reviews.generate_reply", return_value="返信") as mock_gen, \
+         patch("meo.config.content", return_value=conf):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    assert result["replied"] == 0
+    assert result["manual"] == 3
+    mock_gen.assert_not_called()
+    gbp.reply_to_review.assert_not_called()

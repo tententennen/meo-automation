@@ -1,6 +1,78 @@
 # PROGRESS
 
-## Status: All milestones complete — 255/255 tests green
+## Status: All milestones complete — 268/268 tests green
+
+---
+
+## Completed this run (run 18)
+
+### Feature: Banned-word detection in generated content (`src/meo/content.py`)
+
+**Problem**: `generate_post()` and `generate_reply()` instructed the LLM to avoid
+the `banned_words` list but never verified the output.  A model that occasionally
+ignores instructions (e.g. when the topic makes a banned phrase feel natural) could
+publish non-compliant text without the operator knowing.
+
+**Fix**: Added `_check_banned_words(text, banned)` — a case-insensitive scan of
+the generated text against the banned list.  If any banned word is found, a
+`WARNING` log line is emitted with the matched word(s) and a hint to check
+`config/content.yaml`.  The text is returned unchanged (banning is advisory, not
+a hard error) so the automation never stalls on a single word match.
+
+```
+WARNING meo.content: [the_body_kyoto] Generated post contains banned word(s): ['激安'].
+Adjust config/content.yaml banned_words or themes if this recurs.
+```
+
+Both `generate_post()` and `generate_reply()` call the check after truncation.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/content.py` | `_check_banned_words()` helper; both generators call it after text is finalized |
+
+### Feature: Configurable minimum-star threshold for auto-replies (`src/meo/reviews.py`, `config/content.yaml`)
+
+**Problem**: `run_reviews_for_store()` auto-replied to ALL unreplied reviews regardless
+of star rating.  Many operators want to personally review and respond to 1-star (or
+low-star) reviews before an AI reply goes public — an angry customer with a legitimate
+complaint needs a human response, not a canned "thank you for your feedback" message.
+
+**Fix**: Added `min_star_autoreply: 1` to `config/content.yaml` `defaults`.
+
+| Setting | Behaviour |
+|---|---|
+| `min_star_autoreply: 1` | Default — reply to all reviews (no change in behaviour) |
+| `min_star_autoreply: 3` | Auto-reply to 3★, 4★, 5★ only; hold 1★ and 2★ for manual handling |
+| `min_star_autoreply: 4` | Auto-reply to 4★ and 5★ only; hold 1★–3★ for manual handling |
+
+Reviews below the threshold are:
+- **Not replied to** (no API call, no LLM call)
+- **Logged at INFO** with reviewer name and star rating
+- **Counted as `manual`** in the result dict (new key — backward-compatible)
+- **Surfaced in the Slack notification** when `manual > 0`
+
+Also added `_star_to_int(rating)` helper that maps `"ONE"/"TWO"/…/"FIVE"` → `1…5`
+(unknown strings default to `3`).
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `config/content.yaml` | `defaults.min_star_autoreply: 1` |
+| `src/meo/reviews.py` | `_STAR_VALUES` dict; `_star_to_int()` helper; threshold filter after max-replies cap; `manual` key in result dict |
+| `src/meo/notify.py` | Shows `"{N} need manual reply"` in Slack message when `manual > 0` |
+
+### New tests (+13 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_content.py` | `test_check_banned_words_finds_match`; `test_check_banned_words_case_insensitive`; `test_check_banned_words_returns_empty_when_no_match`; `test_generate_post_logs_warning_when_banned_word_found`; `test_generate_post_no_warning_when_no_banned_word`; `test_generate_reply_logs_warning_when_banned_word_found` (6) |
+| `tests/test_reviews.py` | `test_star_to_int_known_values`; `test_star_to_int_unknown_defaults_to_three`; `test_low_star_review_held_for_manual_when_threshold_set`; `test_manual_zero_when_threshold_is_one`; `test_all_reviews_held_when_all_below_threshold` (5) |
+| `tests/test_notify.py` | `test_format_manual_reviews_shown`; `test_format_manual_reviews_absent_when_zero` (2) |
+
+Total: **268/268 tests** (was 255).
 
 ---
 
@@ -1248,7 +1320,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (221/221).
+All code is complete and the test suite is green (268/268).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:
