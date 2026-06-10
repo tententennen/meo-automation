@@ -16,6 +16,16 @@ _SUPPORTED_INDUSTRIES = {"beauty_salon", "fitness_studio"}
 _SUPPORTED_PROVIDERS = {"anthropic", "openai"}
 _SUPPORTED_CTA_TYPES = {"BOOK", "ORDER", "SHOP", "LEARN_MORE", "SIGN_UP", "CALL", "GET_OFFER"}
 
+# Keys that a store entry is allowed to override from content.yaml defaults.
+# Any other key in stores.yaml[store].overrides is rejected at startup.
+_ALLOWED_OVERRIDE_KEYS = frozenset({
+    "post_cadence_days",
+    "max_post_chars",
+    "max_reply_chars",
+    "max_replies_per_run",
+    "min_star_autoreply",
+})
+
 
 def validate_env(content_conf: dict[str, Any] | None = None) -> list[str]:
     """Check that all required environment variables are set.
@@ -65,6 +75,15 @@ def validate_stores(stores_data: dict[str, Any]) -> list[str]:
                 f"stores.yaml: [{key}] unknown industry '{industry}'. "
                 f"Supported: {sorted(_SUPPORTED_INDUSTRIES)}"
             )
+
+        overrides = store.get("overrides")
+        if overrides is not None:
+            unknown = set(overrides.keys()) - _ALLOWED_OVERRIDE_KEYS
+            if unknown:
+                errors.append(
+                    f"stores.yaml: [{key}].overrides contains unknown key(s): "
+                    f"{sorted(unknown)}. Allowed: {sorted(_ALLOWED_OVERRIDE_KEYS)}"
+                )
 
         cta = store.get("call_to_action")
         if cta is not None:

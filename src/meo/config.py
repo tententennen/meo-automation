@@ -42,6 +42,27 @@ def store_list() -> list[dict[str, Any]]:
     return [{"key": k, **v} for k, v in stores().items()]
 
 
+def effective_defaults(store: dict[str, Any]) -> dict[str, Any]:
+    """Return the effective content defaults for this store.
+
+    Merges global defaults from content.yaml with any per-store overrides
+    defined in stores.yaml under the store's optional 'overrides' key.
+    Per-store values shadow the global default for that store only.
+
+    Allowed override keys: post_cadence_days, max_post_chars, max_reply_chars,
+    max_replies_per_run, min_star_autoreply.
+
+    Example entry in stores.yaml:
+        mybear_studio_kyoto:
+          overrides:
+            post_cadence_days: 2      # post every other day
+            min_star_autoreply: 3     # hold 1-2 star reviews for manual handling
+    """
+    base = dict(content()["defaults"])   # shallow copy — values are all scalars
+    base.update(store.get("overrides") or {})
+    return base
+
+
 def clear_cache() -> None:
     """Invalidate the in-process config cache (useful in tests that swap config files)."""
     _stores_cached.cache_clear()

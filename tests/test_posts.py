@@ -334,3 +334,18 @@ def test_force_flag_bypasses_cadence_guard():
 
     gbp.create_local_post.assert_called_once()
     assert result["status"] == "posted"
+
+
+# ---------------------------------------------------------------------------
+# Per-store override tests
+# ---------------------------------------------------------------------------
+
+def test_per_store_cadence_override_passed_to_should_post_today():
+    """A store with overrides.post_cadence_days uses its own cadence, not the global default."""
+    store_with_override = {**_STORE, "overrides": {"post_cadence_days": 3}}
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.should_post_today", return_value=False) as mock_should:
+        run_post_for_store(store_with_override, gbp, drive, dry_run=False)
+
+    # should_post_today must be called with cadence_days=3 (not the global default of 1)
+    mock_should.assert_called_once_with(store_with_override["key"], 3)

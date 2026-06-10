@@ -28,6 +28,12 @@ on:
         description: "Run only for this store key (leave blank for all). Keys: the_body_osaka_shinsaibashi | the_body_kyoto | mybear_studio_kyoto"
         required: false
         default: ""
+      force:
+        description: "Bypass the daily cadence guard and re-post even if a post was already made today"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
 
 jobs:
   run:
@@ -69,6 +75,7 @@ jobs:
             [ "${{ inputs.dry_run }}" = "true" ]     && ARGS="$ARGS --dry-run"
             [ "${{ inputs.skip_posts }}" = "true" ]   && ARGS="$ARGS --skip-posts"
             [ "${{ inputs.skip_reviews }}" = "true" ] && ARGS="$ARGS --skip-reviews"
+            [ "${{ inputs.force }}"        = "true" ]  && ARGS="$ARGS --force"
             [ -n "${{ inputs.store }}" ]               && ARGS="$ARGS --store ${{ inputs.store }}"
           fi
           python -m meo.main $ARGS

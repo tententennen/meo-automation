@@ -55,7 +55,7 @@ def run_reviews_for_store(
     unreplied_total = len(unreplied)  # save before the cap so deferred is accurate
     logger.info("[%s] %d unreplied review(s) of %d total.", store_key, unreplied_total, len(reviews))
 
-    max_replies: int = cfg.content()["defaults"].get("max_replies_per_run", 10)
+    max_replies: int = cfg.effective_defaults(store).get("max_replies_per_run", 10)
     if unreplied_total > max_replies:
         logger.warning(
             "[%s] %d unreplied reviews found; capping at %d (max_replies_per_run). "
@@ -67,7 +67,7 @@ def run_reviews_for_store(
     # --- Star-rating threshold --- #
     # Reviews below min_star_autoreply are held for manual handling instead of
     # receiving an AI-generated reply.  Default 1 = reply to everything.
-    min_star: int = cfg.content()["defaults"].get("min_star_autoreply", 1)
+    min_star: int = cfg.effective_defaults(store).get("min_star_autoreply", 1)
     manual: list[dict[str, Any]] = []
     if min_star > 1:
         auto_reply: list[dict[str, Any]] = []

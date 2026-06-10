@@ -77,7 +77,7 @@ def run_post_for_store(
     location_id = store["location_id"]
     folder_id = store["drive_folder_id"]
 
-    cadence_days: int = cfg.content()["defaults"].get("post_cadence_days", 1)
+    cadence_days: int = cfg.effective_defaults(store).get("post_cadence_days", 1)
 
     if not dry_run and not force and not should_post_today(store_key, cadence_days):
         logger.info(

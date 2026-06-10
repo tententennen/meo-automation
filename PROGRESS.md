@@ -1,6 +1,91 @@
 # PROGRESS
 
-## Status: All milestones complete — 268/268 tests green
+## Status: All milestones complete — 276/276 tests green
+
+---
+
+## Completed this run (run 19)
+
+### Feature: Per-store content config overrides (`config/stores.yaml`, `src/meo/config.py`, `posts.py`, `reviews.py`)
+
+**Problem**: All stores shared the same global defaults from `content.yaml`.
+In practice, the three stores have different operational needs:
+
+- A store might want to post every other day (`post_cadence_days: 2`) instead of daily.
+- A new store owner might want `min_star_autoreply: 3` to hold 1–2★ reviews for
+  personal review before an AI reply goes out.
+- A high-traffic store might need `max_replies_per_run: 20` to catch up faster.
+
+Previously, any such customisation required editing `content.yaml` globally —
+changing it for one store also changed it for the others.
+
+**Fix**: Each store in `stores.yaml` can now include an optional `overrides` section
+that shadows any subset of `content.yaml` defaults for that store only.
+
+**Example** (add to any store in `config/stores.yaml`):
+```yaml
+mybear_studio_kyoto:
+  ...
+  overrides:
+    post_cadence_days: 2      # post every other day
+    min_star_autoreply: 3     # hold 1-2★ reviews for manual handling
+```
+
+Allowed override keys (all optional; use any subset):
+
+| Key | Default | Purpose |
+|---|---|---|
+| `post_cadence_days` | 1 | Days between 最新情報 posts for this store |
+| `max_post_chars` | 1500 | Max chars for the generated post body |
+| `max_reply_chars` | 4096 | Max chars for the generated reply |
+| `max_replies_per_run` | 10 | Cap on LLM reply calls per daily run |
+| `min_star_autoreply` | 1 | Hold reviews below this star count for manual handling |
+
+Unknown override keys (typos, unsupported fields) are caught at startup by
+`meo-validate` / `validate_all()` and reported as configuration errors before
+any API call is attempted.
+
+**Design decisions:**
+- `effective_defaults(store)` in `config.py` returns a shallow dict copy of the
+  global defaults, updated with the store's `overrides`. It does NOT mutate the
+  cached global config — other stores are unaffected.
+- Override is entirely config-driven: the owner edits `stores.yaml` only; no code
+  change, no restart of any service.
+- Commented-out `overrides` templates added to all three stores in `stores.yaml`
+  so the owner knows exactly which keys are available.
+
+### Fix: `--force` missing from GitHub Actions `workflow_dispatch` inputs
+
+**Problem**: `main.py` supported `--force` (bypass the daily cadence guard for
+manual re-runs) but the `workflow_dispatch` trigger in `daily_run.yml` had no
+corresponding input — operators could not trigger a force re-post via the GitHub
+Actions UI without editing the workflow file.
+
+**Fix**: Added `force` as a boolean `choice` input to `workflow_dispatch`. The
+run step now checks `inputs.force` alongside the existing `dry_run`,
+`skip_posts`, and `skip_reviews` inputs.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/config.py` | `effective_defaults(store)` — merges global defaults with per-store overrides |
+| `src/meo/posts.py` | Uses `cfg.effective_defaults(store)` for `post_cadence_days` |
+| `src/meo/reviews.py` | Uses `cfg.effective_defaults(store)` for `max_replies_per_run` and `min_star_autoreply` |
+| `src/meo/validator.py` | `_ALLOWED_OVERRIDE_KEYS` constant; `validate_stores()` rejects unknown override keys |
+| `config/stores.yaml` | Commented `overrides` templates added to all three stores |
+| `.github/workflows/daily_run.yml` | Added `force` dispatch input; wired into the run step |
+
+### New tests (+8 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_config.py` | `test_effective_defaults_returns_global_defaults_when_no_overrides`; `test_effective_defaults_merges_store_overrides`; `test_effective_defaults_does_not_mutate_global_config` (3) |
+| `tests/test_posts.py` | `test_per_store_cadence_override_passed_to_should_post_today` (1) |
+| `tests/test_reviews.py` | `test_per_store_max_replies_override`; `test_per_store_min_star_override` (2) |
+| `tests/test_validator.py` | `test_validate_stores_valid_override_keys_pass`; `test_validate_stores_unknown_override_key_produces_error` (2) |
+
+Total: **276/276 tests** (was 268).
 
 ---
 

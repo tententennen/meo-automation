@@ -297,3 +297,46 @@ def test_all_reviews_held_when_all_below_threshold():
     assert result["manual"] == 3
     mock_gen.assert_not_called()
     gbp.reply_to_review.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Per-store override tests
+# ---------------------------------------------------------------------------
+
+def test_per_store_max_replies_override():
+    """A store with overrides.max_replies_per_run caps at the per-store value, not the global."""
+    store_with_override = {**_STORE, "overrides": {"max_replies_per_run": 1}}
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [
+        {
+            "name": f"accounts/1/locations/1/reviews/rev{i:03d}",
+            "reviewId": f"rev{i:03d}",
+            "reviewer": {"displayName": f"User{i}"},
+            "starRating": "FIVE",
+            "comment": f"Good {i}",
+        }
+        for i in range(3)
+    ]
+    with patch("meo.reviews.generate_reply", return_value="返信"):
+        result = run_reviews_for_store(store_with_override, gbp, dry_run=True)
+    assert result["replied"] == 1
+    assert result["deferred"] == 2
+
+
+def test_per_store_min_star_override():
+    """A store with overrides.min_star_autoreply holds low-rated reviews for manual handling."""
+    store_with_override = {**_STORE, "overrides": {"min_star_autoreply": 4}}
+    gbp = MagicMock()
+    low_star = {
+        "name": "accounts/1/locations/1/reviews/rev_low",
+        "reviewId": "rev_low",
+        "reviewer": {"displayName": "不満"},
+        "starRating": "TWO",
+        "comment": "まあまあ",
+    }
+    gbp.list_reviews.return_value = [low_star]
+    with patch("meo.reviews.generate_reply", return_value="返信") as mock_gen:
+        result = run_reviews_for_store(store_with_override, gbp, dry_run=False)
+    assert result["replied"] == 0
+    assert result["manual"] == 1
+    mock_gen.assert_not_called()

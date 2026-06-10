@@ -255,3 +255,29 @@ def test_validate_all_collects_errors_from_multiple_sources():
          patch.dict(os.environ, _FULL_ENV, clear=True):
         errors = v.validate_all()
     assert len(errors) >= 3
+
+
+# ---------------------------------------------------------------------------
+# Per-store override key validation
+# ---------------------------------------------------------------------------
+
+def test_validate_stores_valid_override_keys_pass():
+    stores = {
+        "s": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"post_cadence_days": 2, "min_star_autoreply": 3},
+        }
+    }
+    assert v.validate_stores(stores) == []
+
+
+def test_validate_stores_unknown_override_key_produces_error():
+    stores = {
+        "s": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"post_cadence_days": 2, "invalid_setting": True},
+        }
+    }
+    errors = v.validate_stores(stores)
+    assert any("invalid_setting" in e for e in errors)
+    assert any("overrides" in e for e in errors)

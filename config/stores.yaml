@@ -22,6 +22,12 @@ stores:
     # call_to_action:
     #   action_type: "BOOK"
     #   url: ""   # e.g. https://yoursite.com/osaka/book
+    # overrides:                         # optional: shadow content.yaml defaults for this store only
+    #   post_cadence_days: 1             # post daily (default)
+    #   min_star_autoreply: 1            # auto-reply to all ratings (default; set to 3 to hold 1-2★)
+    #   max_replies_per_run: 10          # max review replies per run
+    #   max_post_chars: 1500             # max chars for generated post text
+    #   max_reply_chars: 4096            # max chars for generated reply text
 
   the_body_kyoto:
     name: "THE BODY 京都店"
@@ -31,6 +37,10 @@ stores:
     # call_to_action:
     #   action_type: "BOOK"
     #   url: ""   # e.g. https://yoursite.com/kyoto/book
+    # overrides:
+    #   post_cadence_days: 1
+    #   min_star_autoreply: 1
+    #   max_replies_per_run: 10
 
   mybear_studio_kyoto:
     name: "MYBEAR STUDIO 京都店"
@@ -40,3 +50,6 @@ stores:
     # call_to_action:
     #   action_type: "BOOK"
     #   url: ""   # e.g. https://yoursite.com/mybear/trial
+    # overrides:
+    #   post_cadence_days: 2             # post every other day for less-frequent fitness content
+    #   min_star_autoreply: 3            # hold 1-2★ reviews for manual handling

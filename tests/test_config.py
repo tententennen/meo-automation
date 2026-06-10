@@ -36,3 +36,37 @@ def test_content_industry_tones():
         tone = conf["industry_tones"][industry]
         assert "tone" in tone
         assert "themes" in tone
+
+
+# ---------------------------------------------------------------------------
+# effective_defaults — per-store override merging
+# ---------------------------------------------------------------------------
+
+def test_effective_defaults_returns_global_defaults_when_no_overrides():
+    store = {"key": "store_a", "name": "A", "industry": "beauty_salon"}
+    defaults = cfg.effective_defaults(store)
+    global_defaults = cfg.content()["defaults"]
+    assert defaults["post_cadence_days"] == global_defaults["post_cadence_days"]
+    assert defaults["max_post_chars"] == global_defaults["max_post_chars"]
+
+
+def test_effective_defaults_merges_store_overrides():
+    store = {
+        "key": "store_a",
+        "name": "A",
+        "industry": "beauty_salon",
+        "overrides": {"post_cadence_days": 3, "min_star_autoreply": 4},
+    }
+    defaults = cfg.effective_defaults(store)
+    assert defaults["post_cadence_days"] == 3
+    assert defaults["min_star_autoreply"] == 4
+    # Keys not overridden retain global values
+    assert defaults["max_post_chars"] == cfg.content()["defaults"]["max_post_chars"]
+
+
+def test_effective_defaults_does_not_mutate_global_config():
+    original_cadence = cfg.content()["defaults"]["post_cadence_days"]
+    store = {"key": "store_a", "overrides": {"post_cadence_days": 99}}
+    cfg.effective_defaults(store)
+    # Global default must be unchanged after the call
+    assert cfg.content()["defaults"]["post_cadence_days"] == original_cadence
