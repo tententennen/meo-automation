@@ -50,6 +50,23 @@ _REPLY_HISTORY_KYOTO = [
     },
 ]
 
+_HELD_REVIEWS_KYOTO = [
+    {
+        "date": "2026-01-10",
+        "review_id": "rev_low_1",
+        "reviewer": "不満なお客様",
+        "stars": "ONE",
+        "comment": "最悪でした。",
+    },
+    {
+        "date": "2026-01-10",
+        "review_id": "rev_low_2",
+        "reviewer": "まあまあ",
+        "stars": "TWO",
+        "comment": "普通でした。",
+    },
+]
+
 
 @pytest.fixture(autouse=True)
 def _patch_store_list(monkeypatch):
@@ -71,9 +88,17 @@ def _patch_reply_history(monkeypatch):
 
 
 @pytest.fixture()
+def _patch_held_history(monkeypatch):
+    def _hist(store_key):
+        return list(_HELD_REVIEWS_KYOTO) if store_key == "the_body_kyoto" else []
+    monkeypatch.setattr("meo.tools.export.state.get_held_reviews", _hist)
+
+
+@pytest.fixture()
 def _no_history(monkeypatch):
     monkeypatch.setattr("meo.tools.export.state.get_post_history", lambda k: [])
     monkeypatch.setattr("meo.tools.export.state.get_reply_history", lambda k: [])
+    monkeypatch.setattr("meo.tools.export.state.get_held_reviews", lambda k: [])
 
 
 # ---------------------------------------------------------------------------
@@ -265,3 +290,59 @@ class TestMain:
         main()
         content = out_path.read_text(encoding="utf-8-sig")
         assert "THE BODY 京都店" in content
+
+    def test_held_reviews_prints_csv_header(self, capsys, _patch_held_history, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "held-reviews"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "review_id" in out
+        assert "reviewer" in out
+        assert "comment" in out
+
+    def test_held_reviews_content_in_output(self, capsys, _patch_held_history, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "held-reviews"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "rev_low_1" in out
+        assert "不満なお客様" in out
+        assert "ONE" in out
+
+    def test_no_held_reviews_exits_0_with_helpful_message(
+        self, capsys, _no_history, monkeypatch
+    ):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "held-reviews"])
+        from meo.tools.export import main
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        err = capsys.readouterr().err
+        assert "min_star_autoreply" in err
+
+
+# ---------------------------------------------------------------------------
+# export_held_reviews()
+# ---------------------------------------------------------------------------
+
+class TestExportHeldReviews:
+    def test_returns_one_row_per_entry(self, _patch_held_history):
+        from meo.tools.export import export_held_reviews
+        rows = export_held_reviews(_STORES)
+        assert len(rows) == 2  # 2 held for kyoto; 0 for mybear
+
+    def test_row_includes_required_fields(self, _patch_held_history):
+        from meo.tools.export import export_held_reviews
+        row = export_held_reviews(_STORES)[0]
+        assert row["store_key"] == "the_body_kyoto"
+        assert row["store_name"] == "THE BODY 京都店"
+        assert row["date"] == "2026-01-10"
+        assert row["review_id"] == "rev_low_1"
+        assert row["reviewer"] == "不満なお客様"
+        assert row["stars"] == "ONE"
+        assert row["comment"] == "最悪でした。"
+
+    def test_empty_store_contributes_no_rows(self, _patch_held_history):
+        from meo.tools.export import export_held_reviews
+        rows = export_held_reviews([s for s in _STORES if s["key"] == "mybear_studio_kyoto"])
+        assert rows == []

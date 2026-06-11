@@ -8,7 +8,12 @@ from typing import Any
 from . import config as cfg
 from .business_profile import BusinessProfileClient
 from .content import generate_reply
-from .state import get_replied_reviews, record_replied_review, record_reply_content
+from .state import (
+    get_replied_reviews,
+    record_held_reviews,
+    record_replied_review,
+    record_reply_content,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +91,20 @@ def run_reviews_for_store(
                     for r in manual
                 ],
             )
+        if not dry_run:
+            # Persist a snapshot so the operator can export held reviews via
+            # `meo-export held-reviews` without digging through log files.
+            # Passing an empty list when manual==[] clears any stale snapshot.
+            held_snapshots = [
+                {
+                    "review_id": _extract_review_id(r),
+                    "reviewer": r.get("reviewer", {}).get("displayName", ""),
+                    "stars": r.get("starRating", ""),
+                    "comment": r.get("comment", ""),
+                }
+                for r in manual
+            ]
+            record_held_reviews(store_key, held_snapshots)
         unreplied = auto_reply
 
     replied = 0

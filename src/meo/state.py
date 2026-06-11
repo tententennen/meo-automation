@@ -5,8 +5,13 @@ State is stored in logs/state.json as a simple JSON object:
     "last_post":       {"the_body_kyoto": "2024-01-15", ...},
     "recent_images":   {"the_body_kyoto": ["file_id_1", "file_id_2"], ...},
     "recent_themes":   {"the_body_kyoto": ["季節のお手入れ情報", ...], ...},
-    "replied_reviews": {"the_body_kyoto": ["rev001", "rev002", ...], ...}
+    "replied_reviews": {"the_body_kyoto": ["rev001", "rev002", ...], ...},
+    "held_reviews":    {"the_body_kyoto": [{"date": "2024-01-15", ...}, ...], ...}
   }
+
+Writes are atomic: a .tmp file is written first, then renamed over state.json via
+os.replace() (POSIX-atomic). The previous state.json is backed up as state.bak
+before each overwrite. If state.json is corrupt, _load() falls back to state.bak.
 
 This file is NOT committed to git (covered by .gitignore logs/).
 It is written by the daily runner after each successful post or reply.
@@ -41,18 +46,54 @@ def _today() -> date:
     return datetime.now(tz=_JST).date()
 
 
+def _backup_path() -> Path:
+    """Return the backup path derived from the current _STATE_FILE."""
+    return _STATE_FILE.with_suffix(".bak")
+
+
 def _load() -> dict[str, Any]:
+    """Load state from disk.
+
+    Falls back to the .bak file if state.json is missing or corrupt, so a
+    crash mid-write (which leaves a partial .tmp or truncated JSON) does not
+    permanently lose all run history.
+    """
     if _STATE_FILE.exists():
         try:
             return json.loads(_STATE_FILE.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Could not read state file %s: %s — starting fresh.", _STATE_FILE, exc)
+            logger.warning(
+                "Could not read state file %s: %s — trying backup.", _STATE_FILE, exc
+            )
+    backup = _backup_path()
+    if backup.exists():
+        try:
+            data = json.loads(backup.read_text(encoding="utf-8"))
+            logger.warning("Loaded state from backup %s.", backup)
+            return data
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Could not read backup file %s: %s — starting fresh.", backup, exc
+            )
     return {}
 
 
 def _save(state: dict[str, Any]) -> None:
+    """Write state atomically.
+
+    Writes to a .tmp file first, then:
+    1. Renames the current state.json → state.bak (backup of last good state).
+    2. Renames state.tmp → state.json (atomic POSIX rename via Path.replace).
+
+    A crash after step 1 leaves state.bak intact; _load() will fall back to it.
+    A crash during the write to .tmp leaves state.json untouched.
+    """
     _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp = _STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    if _STATE_FILE.exists():
+        _STATE_FILE.replace(_backup_path())
+    tmp.replace(_STATE_FILE)
 
 
 def should_post_today(store_key: str, cadence_days: int = 1) -> bool:
@@ -259,6 +300,42 @@ def get_replied_reviews(store_key: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Held review snapshot — reviews awaiting manual reply
+# ---------------------------------------------------------------------------
+
+def record_held_reviews(
+    store_key: str,
+    reviews: list[dict[str, Any]],
+) -> None:
+    """Snapshot reviews currently held for manual reply for store_key.
+
+    Each entry in ``reviews`` must be a dict with keys:
+        review_id, reviewer, stars, comment
+
+    The snapshot REPLACES the previous one — entries do not accumulate across
+    runs.  Call with an empty list when all held reviews have been resolved so
+    ``get_held_reviews()`` returns [] for the next run.
+
+    The current JST date is stamped onto each entry automatically.
+    """
+    today = _today().isoformat()
+    snapshot = [{**r, "date": today} for r in reviews]
+    state = _load()
+    state.setdefault("held_reviews", {})[store_key] = snapshot
+    _save(state)
+    logger.debug("Snapshotted %d held review(s) for %s.", len(snapshot), store_key)
+
+
+def get_held_reviews(store_key: str) -> list[dict[str, Any]]:
+    """Return the held-review snapshot for store_key from the last run.
+
+    Returns an empty list if no snapshot exists or if all held reviews were
+    resolved before the last run completed.
+    """
+    return list(_load().get("held_reviews", {}).get(store_key, []))
+
+
+# ---------------------------------------------------------------------------
 # State reset helpers — used by the meo-reset CLI tool
 # ---------------------------------------------------------------------------
 
@@ -365,4 +442,32 @@ def clear_replied_reviews(store_key: str | None = None) -> list[str]:
     state["replied_reviews"] = section
     _save(state)
     logger.debug("Cleared replied reviews for: %s", cleared or "none")
+    return cleared
+
+
+def clear_held_reviews(store_key: str | None = None) -> list[str]:
+    """Clear the held-review snapshot for one or all stores.
+
+    Useful after manually replying to held reviews on GBP so the next
+    ``meo-export held-reviews`` output reflects the cleared state.
+    The operator can also just wait — the snapshot is replaced automatically
+    on the next daily run.
+
+    Args:
+        store_key: Clear only this store's snapshot.  Clears all when None.
+
+    Returns:
+        List of store keys whose snapshot was cleared.
+    """
+    state = _load()
+    section: dict[str, Any] = state.get("held_reviews", {})
+    if store_key is not None:
+        cleared = [store_key] if store_key in section else []
+        section.pop(store_key, None)
+    else:
+        cleared = list(section.keys())
+        section.clear()
+    state["held_reviews"] = section
+    _save(state)
+    logger.debug("Cleared held reviews for: %s", cleared or "none")
     return cleared

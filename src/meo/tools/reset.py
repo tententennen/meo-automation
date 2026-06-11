@@ -14,6 +14,10 @@ Subcommands:
   replied-reviews Clear the local replied-review tracking set.
                   Safe — GBP's own reviewReply field remains the authoritative
                   source; this only resets the propagation-lag safety net.
+  held-reviews    Clear the held-review snapshot.
+                  Use after manually replying to held reviews on GBP so the
+                  next `meo-export held-reviews` reflects the resolved state.
+                  The snapshot is also refreshed automatically on each daily run.
   all             Clear all of the above at once.
 
 Without --store, each subcommand applies to ALL stores.
@@ -22,6 +26,7 @@ Usage:
     meo-reset post-guard                           # clear all stores
     meo-reset post-guard --store the_body_kyoto    # single store
     meo-reset image-history --store mybear_studio_kyoto
+    meo-reset held-reviews                         # after replying manually on GBP
     meo-reset all                                  # wipe all state
     meo-reset all --store the_body_kyoto
 
@@ -41,6 +46,7 @@ except ImportError:
 
 from .. import config as cfg
 from ..state import (
+    clear_held_reviews,
     clear_image_history,
     clear_post_guard,
     clear_replied_reviews,
@@ -52,6 +58,7 @@ _DESCRIPTIONS: dict[str, str] = {
     "image-history":   "Clear Drive image rotation history.",
     "theme-history":   "Clear post theme rotation history.",
     "replied-reviews": "Clear local replied-review tracking set.",
+    "held-reviews":    "Clear the held-review snapshot (after replying manually on GBP).",
     "all":             "Clear all of the above.",
 }
 
@@ -60,6 +67,7 @@ _SECTION_LABELS: dict[str, str] = {
     "image_history":   "Image history",
     "theme_history":   "Theme history",
     "replied_reviews": "Replied reviews",
+    "held_reviews":    "Held reviews",
 }
 
 
@@ -90,6 +98,9 @@ def run_reset(subcommand: str, store_key: str | None = None) -> dict[str, list[s
 
     if subcommand in ("replied-reviews", "all"):
         results["replied_reviews"] = clear_replied_reviews(store_key)
+
+    if subcommand in ("held-reviews", "all"):
+        results["held_reviews"] = clear_held_reviews(store_key)
 
     return results
 

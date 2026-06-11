@@ -1,6 +1,111 @@
 # PROGRESS
 
-## Status: All milestones complete — 276/276 tests green
+## Status: All milestones complete — 299/299 tests green
+
+---
+
+## Completed this run (run 20)
+
+### Feature: Atomic state writes + backup recovery (`src/meo/state.py`)
+
+**Problem**: `_save()` wrote directly to `state.json` with `Path.write_text()`.
+A crash mid-write (OOM kill, power loss, container eviction) could leave a
+partially-written file.  On the next run, `_load()` would detect corrupt JSON
+and fall back to an empty dict — silently discarding all rotation history,
+replied-review guards, and content archives.
+
+**Fix**: `_save()` now uses an atomic two-step write:
+
+1. Write new state to `state.tmp` (complete write before any rename).
+2. If `state.json` exists, rename it to `state.bak` (preserves last good state).
+3. Rename `state.tmp` → `state.json` via `Path.replace()` (POSIX-atomic — either
+   the old file or the new file is visible, never a partial write).
+
+`_load()` now falls back to `state.bak` when `state.json` is missing or corrupt:
+
+```
+state.json  OK  → use it
+state.json  BAD → try state.bak → use it (log WARNING)
+state.bak   BAD → start fresh (log WARNING)
+```
+
+This protects against crash-at-write without any extra tooling.
+
+**Added helpers:**
+- `_backup_path()` — derives the `.bak` path from `_STATE_FILE` so tests that
+  redirect `_STATE_FILE` to a temp path automatically get the correct backup path.
+
+### Feature: Held-review snapshot persistence (`src/meo/state.py`, `reviews.py`)
+
+**Problem**: Reviews held by `min_star_autoreply` (e.g., 1★/2★ reviews held for
+manual reply) were only counted and logged.  The operator had no structured way
+to see *which* reviews needed manual attention without reading log files.  On the
+next run those same reviews would appear as held again — they would keep appearing
+until manually replied to on GBP, but there was no export path.
+
+**Fix**: Added a per-store held-review snapshot to `state.json`.
+
+| Function | Behaviour |
+|---|---|
+| `record_held_reviews(store_key, reviews)` | Stores a snapshot of currently-held reviews (replaces previous — not appended) |
+| `get_held_reviews(store_key)` | Returns the snapshot from the last live run |
+| `clear_held_reviews(store_key \| None)` | Clears snapshot after manual replies are done |
+
+Each entry in the snapshot: `{date, review_id, reviewer, stars, comment}`.
+
+`reviews.py` calls `record_held_reviews()` whenever `min_star > 1` and not
+dry-run — passing an empty list when all reviews are above the threshold so old
+snapshots are cleared automatically when the situation resolves.
+
+### Feature: `meo-export held-reviews` (`src/meo/tools/export.py`)
+
+```bash
+meo-export held-reviews                               # all stores → stdout
+meo-export held-reviews --store the_body_kyoto        # single store
+meo-export held-reviews --output held.csv             # write file (UTF-8-BOM)
+```
+
+Exports the held-review snapshot as a CSV so the operator can see the review
+text, star rating, and reviewer name in a spreadsheet and reply manually on GBP.
+
+**CSV schema:** `store_key, store_name, date, review_id, reviewer, stars, comment`
+
+**"No data" message** is specific: `"No held reviews found. Either no reviews are
+below min_star_autoreply, or the tool has not run in live mode yet."` — distinguishes
+"threshold is 1 so nothing is held" from "tool hasn't run yet".
+
+### Feature: `meo-reset held-reviews` (`src/meo/tools/reset.py`)
+
+```bash
+meo-reset held-reviews                                # clear all stores
+meo-reset held-reviews --store the_body_kyoto         # single store
+meo-reset all                                         # now also clears held_reviews
+```
+
+Clears the held-review snapshot after the operator has replied manually on GBP.
+The snapshot is also refreshed automatically on the next daily run, so clearing
+is optional — it just makes `meo-export held-reviews` immediately show an empty
+result without waiting for the next scheduled run.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | `_backup_path()`; atomic `_save()` via tmp→rename; backup fallback in `_load()`; `record_held_reviews()`, `get_held_reviews()`, `clear_held_reviews()` |
+| `src/meo/reviews.py` | Imports `record_held_reviews`; calls it after the star-threshold filter (live mode only) |
+| `src/meo/tools/export.py` | `_HELD_FIELDS`, `export_held_reviews()`; `"held-reviews"` added to choices; specific "No data" message |
+| `src/meo/tools/reset.py` | Imports `clear_held_reviews`; `"held-reviews"` subcommand; `"all"` includes it |
+
+### New tests (+23 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_state.py` | Atomic write: creates backup; corrupt main falls back to backup; both corrupt → fresh start; no .tmp file left after write (4). Held reviews: empty, store snapshot, replace semantics, empty list clears, per-store isolation, clear specific, clear all, clear missing (8) |
+| `tests/test_reviews.py` | `patch_record_held_reviews` autouse fixture; `record_held_reviews` called with snapshot; not called in dry-run; called with empty list when all above threshold (3 new tests + autouse) |
+| `tests/test_export.py` | `_patch_held_history` fixture; `TestExportHeldReviews` (3 tests); `TestMain` held-reviews header, content, no-data message (3 tests) |
+| `tests/test_reset.py` | `_write_full_state` updated; held-reviews all stores; held-reviews specific store (2 tests); `test_run_reset_all_clears_every_section` updated |
+
+Total: **299/299 tests** (was 276).
 
 ---
 
@@ -1405,7 +1510,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (268/268).
+All code is complete and the test suite is green (299/299).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:

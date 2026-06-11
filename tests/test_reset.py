@@ -52,6 +52,10 @@ def _write_full_state(state_file: Path) -> None:
             "the_body_kyoto": ["rev1"],
             "mybear_studio_kyoto": ["rev2"],
         },
+        "held_reviews": {
+            "the_body_kyoto": [{"review_id": "rev_low", "reviewer": "不満", "stars": "ONE", "comment": "最悪", "date": "2024-06-15"}],
+            "mybear_studio_kyoto": [],
+        },
     }
     state_file.write_text(json.dumps(data))
 
@@ -105,15 +109,36 @@ def test_run_reset_replied_reviews_all_stores(patch_state_file):
     assert state_mod._load().get("replied_reviews") == {}
 
 
+def test_run_reset_held_reviews_all_stores(patch_state_file):
+    _write_full_state(patch_state_file)
+    result = run_reset("held-reviews")
+    assert "the_body_kyoto" in result["held_reviews"]
+    # All keys are popped → held_reviews section is empty
+    assert state_mod._load().get("held_reviews") == {}
+
+
+def test_run_reset_held_reviews_specific_store(patch_state_file):
+    _write_full_state(patch_state_file)
+    result = run_reset("held-reviews", store_key="the_body_kyoto")
+    assert result["held_reviews"] == ["the_body_kyoto"]
+    # the_body_kyoto key is popped from the section
+    assert "the_body_kyoto" not in state_mod._load().get("held_reviews", {})
+    # mybear_studio_kyoto had an empty list; it stays (not cleared)
+    assert "mybear_studio_kyoto" in state_mod._load().get("held_reviews", {})
+
+
 def test_run_reset_all_clears_every_section(patch_state_file):
     _write_full_state(patch_state_file)
     result = run_reset("all")
-    assert set(result.keys()) == {"post_guard", "image_history", "theme_history", "replied_reviews"}
+    assert set(result.keys()) == {
+        "post_guard", "image_history", "theme_history", "replied_reviews", "held_reviews"
+    }
     loaded = state_mod._load()
     assert loaded.get("last_post") == {}
     assert loaded.get("recent_images") == {}
     assert loaded.get("recent_themes") == {}
     assert loaded.get("replied_reviews") == {}
+    assert loaded.get("held_reviews") == {}
 
 
 def test_run_reset_all_specific_store_leaves_other_intact(patch_state_file):

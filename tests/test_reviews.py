@@ -19,6 +19,12 @@ def patch_replied_review_state(monkeypatch):
     monkeypatch.setattr("meo.reviews.record_replied_review", lambda *a: None)
 
 
+@pytest.fixture(autouse=True)
+def patch_record_held_reviews(monkeypatch):
+    """Silence record_held_reviews for all tests — snapshot is tested in test_state.py."""
+    monkeypatch.setattr("meo.reviews.record_held_reviews", lambda *a, **kw: None)
+
+
 _STORE = {
     "key": "the_body_osaka_shinsaibashi",
     "name": "THE BODY 大阪 心斎橋店",
@@ -340,3 +346,63 @@ def test_per_store_min_star_override():
     assert result["replied"] == 0
     assert result["manual"] == 1
     mock_gen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Held review snapshot tests
+# ---------------------------------------------------------------------------
+
+_LOW_STAR_REVIEW = {
+    "name": "accounts/1/locations/1/reviews/rev_low",
+    "reviewId": "rev_low",
+    "reviewer": {"displayName": "不満なお客様"},
+    "starRating": "ONE",
+    "comment": "残念でした。",
+}
+
+
+def test_record_held_reviews_called_with_manual_reviews():
+    """record_held_reviews must be called with pre-processed snapshot when min_star>1 and live."""
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [_LOW_STAR_REVIEW]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf), \
+         patch("meo.reviews.record_held_reviews") as mock_held:
+        run_reviews_for_store(_STORE, gbp, dry_run=False)
+    mock_held.assert_called_once()
+    store_key_arg, snapshots_arg = mock_held.call_args.args
+    assert store_key_arg == _STORE["key"]
+    assert len(snapshots_arg) == 1
+    assert snapshots_arg[0]["review_id"] == "rev_low"
+    assert snapshots_arg[0]["stars"] == "ONE"
+    assert snapshots_arg[0]["reviewer"] == "不満なお客様"
+
+
+def test_record_held_reviews_not_called_in_dry_run():
+    """Dry run must not persist the held-review snapshot."""
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [_LOW_STAR_REVIEW]
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf), \
+         patch("meo.reviews.record_held_reviews") as mock_held:
+        run_reviews_for_store(_STORE, gbp, dry_run=True)
+    mock_held.assert_not_called()
+
+
+def test_record_held_reviews_called_with_empty_list_when_all_resolved():
+    """When min_star>1 but no reviews are below threshold, snapshot is cleared (empty list)."""
+    gbp = MagicMock()
+    high_star_review = {**_REVIEW_UNREPLIED, "starRating": "FIVE"}
+    gbp.list_reviews.return_value = [high_star_review]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf), \
+         patch("meo.reviews.record_held_reviews") as mock_held:
+        run_reviews_for_store(_STORE, gbp, dry_run=False)
+    mock_held.assert_called_once()
+    _, snapshots_arg = mock_held.call_args.args
+    assert snapshots_arg == []

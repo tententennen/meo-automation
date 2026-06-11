@@ -382,3 +382,127 @@ def test_clear_replied_reviews_all_stores():
     assert set(cleared) == {"store_a", "store_b"}
     assert state_mod.get_replied_reviews("store_a") == []
     assert state_mod.get_replied_reviews("store_b") == []
+
+
+# ---------------------------------------------------------------------------
+# Atomic write + backup recovery tests
+# ---------------------------------------------------------------------------
+
+def test_save_creates_backup_of_previous_state(tmp_path):
+    """After a second _save(), the previous state is preserved in state.bak."""
+    state_mod.record_post("store_x")  # first write → no backup yet
+    state_mod.record_post("store_y")  # second write → should create .bak
+    backup = state_mod._backup_path()
+    assert backup.exists(), "state.bak should exist after a second write"
+    bak_data = json.loads(backup.read_text())
+    # The backup should contain store_x (state before the second write)
+    assert "store_x" in bak_data.get("last_post", {})
+
+
+def test_corrupt_main_file_loads_from_backup(tmp_path):
+    """If state.json is corrupt, _load() should fall back to state.bak."""
+    # Write valid state
+    state_mod.record_image("my_store", "file_001")
+    # Corrupt the main file
+    state_mod._STATE_FILE.write_text("{ INVALID JSON }")
+    # Write a valid backup manually to simulate the previous good state
+    backup = state_mod._backup_path()
+    backup.write_text(json.dumps({"recent_images": {"my_store": ["file_001"]}}))
+    # _load() should fall back to backup
+    images = state_mod.get_recent_images("my_store")
+    assert images == ["file_001"]
+
+
+def test_corrupt_main_and_backup_returns_fresh_state():
+    """If both state.json and state.bak are corrupt, _load() returns {}."""
+    state_mod._STATE_FILE.write_text("{bad}")
+    state_mod._backup_path().write_text("{also bad}")
+    loaded = state_mod._load()
+    assert loaded == {}
+
+
+def test_save_writes_to_tmp_then_renames(tmp_path):
+    """After _save(), no .tmp file should remain — only state.json."""
+    state_mod.record_post("my_store")
+    tmp = state_mod._STATE_FILE.with_suffix(".tmp")
+    assert not tmp.exists(), ".tmp file should be cleaned up after atomic write"
+    assert state_mod._STATE_FILE.exists()
+
+
+# ---------------------------------------------------------------------------
+# Held reviews snapshot tests
+# ---------------------------------------------------------------------------
+
+_HELD_REVIEW_SNAP = [
+    {
+        "review_id": "rev_low_1",
+        "reviewer": "不満なお客様",
+        "stars": "ONE",
+        "comment": "最悪でした。",
+    },
+    {
+        "review_id": "rev_low_2",
+        "reviewer": "まあまあのお客様",
+        "stars": "TWO",
+        "comment": "普通です。",
+    },
+]
+
+
+def test_get_held_reviews_empty_when_no_snapshot():
+    assert state_mod.get_held_reviews("my_store") == []
+
+
+def test_record_held_reviews_stores_snapshot(frozen_today):
+    state_mod.record_held_reviews("my_store", _HELD_REVIEW_SNAP)
+    snapshot = state_mod.get_held_reviews("my_store")
+    assert len(snapshot) == 2
+    assert snapshot[0]["review_id"] == "rev_low_1"
+    assert snapshot[0]["reviewer"] == "不満なお客様"
+    assert snapshot[0]["stars"] == "ONE"
+    assert snapshot[0]["comment"] == "最悪でした。"
+    assert snapshot[0]["date"] == _FIXED_TODAY.isoformat()
+
+
+def test_record_held_reviews_replaces_previous_snapshot(frozen_today):
+    """Calling record_held_reviews twice replaces (not appends to) the snapshot."""
+    state_mod.record_held_reviews("my_store", _HELD_REVIEW_SNAP)
+    state_mod.record_held_reviews("my_store", [_HELD_REVIEW_SNAP[0]])  # only 1 review now
+    snapshot = state_mod.get_held_reviews("my_store")
+    assert len(snapshot) == 1
+    assert snapshot[0]["review_id"] == "rev_low_1"
+
+
+def test_record_held_reviews_empty_list_clears_snapshot(frozen_today):
+    """Passing an empty list should clear the snapshot (all held reviews resolved)."""
+    state_mod.record_held_reviews("my_store", _HELD_REVIEW_SNAP)
+    state_mod.record_held_reviews("my_store", [])
+    assert state_mod.get_held_reviews("my_store") == []
+
+
+def test_held_reviews_independent_per_store(frozen_today):
+    state_mod.record_held_reviews("store_a", _HELD_REVIEW_SNAP)
+    assert state_mod.get_held_reviews("store_b") == []
+
+
+def test_clear_held_reviews_specific_store(frozen_today):
+    state_mod.record_held_reviews("store_a", _HELD_REVIEW_SNAP)
+    state_mod.record_held_reviews("store_b", [_HELD_REVIEW_SNAP[0]])
+    cleared = state_mod.clear_held_reviews("store_a")
+    assert cleared == ["store_a"]
+    assert state_mod.get_held_reviews("store_a") == []
+    assert len(state_mod.get_held_reviews("store_b")) == 1  # untouched
+
+
+def test_clear_held_reviews_all_stores(frozen_today):
+    state_mod.record_held_reviews("store_a", _HELD_REVIEW_SNAP)
+    state_mod.record_held_reviews("store_b", [_HELD_REVIEW_SNAP[1]])
+    cleared = state_mod.clear_held_reviews()
+    assert set(cleared) == {"store_a", "store_b"}
+    assert state_mod.get_held_reviews("store_a") == []
+    assert state_mod.get_held_reviews("store_b") == []
+
+
+def test_clear_held_reviews_missing_store_returns_empty():
+    cleared = state_mod.clear_held_reviews("nonexistent_store")
+    assert cleared == []
