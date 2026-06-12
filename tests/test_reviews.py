@@ -257,7 +257,7 @@ def test_low_star_review_held_for_manual_when_threshold_set():
     # Only the FOUR-star review should have been replied to
     assert result["replied"] == 1
     assert result["manual"] == 1
-    mock_gen.call_count == 1  # only called for the FOUR-star review
+    assert mock_gen.call_count == 1  # only called for the FOUR-star review
 
 
 def test_manual_zero_when_threshold_is_one():

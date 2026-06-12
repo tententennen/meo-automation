@@ -4,6 +4,31 @@
 
 ---
 
+## Completed this run (run 21)
+
+### Fix: Silent assertion in `tests/test_reviews.py`
+
+`test_low_star_review_held_for_manual_when_threshold_set` contained a bare
+comparison expression on line 260:
+
+```python
+mock_gen.call_count == 1  # only called for the FOUR-star review
+```
+
+This evaluated to `True` or `False` and was silently discarded — the assertion
+was **never actually checked**.  If a regression caused `generate_reply` to be
+called for the held (1★) review as well, the test would still pass.
+
+Fixed by adding `assert`:
+
+```python
+assert mock_gen.call_count == 1  # only called for the FOUR-star review
+```
+
+All 299 tests continue to pass.
+
+---
+
 ## Completed this run (run 20)
 
 ### Feature: Atomic state writes + backup recovery (`src/meo/state.py`)
