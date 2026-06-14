@@ -281,3 +281,13 @@ def test_validate_stores_unknown_override_key_produces_error():
     errors = v.validate_stores(stores)
     assert any("invalid_setting" in e for e in errors)
     assert any("overrides" in e for e in errors)
+
+
+def test_validate_stores_max_review_age_days_is_a_valid_override_key():
+    stores = {
+        "s": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"max_review_age_days": 30},
+        }
+    }
+    assert v.validate_stores(stores) == []

@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 
-from meo.reviews import run_reviews_for_store, _has_reply, _extract_review_id, _star_to_int
+from meo.reviews import run_reviews_for_store, _has_reply, _extract_review_id, _star_to_int, _review_age_days
 
 
 @pytest.fixture(autouse=True)
@@ -406,3 +406,122 @@ def test_record_held_reviews_called_with_empty_list_when_all_resolved():
     mock_held.assert_called_once()
     _, snapshots_arg = mock_held.call_args.args
     assert snapshots_arg == []
+
+
+# ---------------------------------------------------------------------------
+# _review_age_days helper
+# ---------------------------------------------------------------------------
+
+def test_review_age_days_returns_a_positive_float_for_recent_review():
+    review = {"createTime": "2020-01-01T00:00:00Z"}
+    age = _review_age_days(review)
+    assert age is not None
+    assert age > 0
+
+
+def test_review_age_days_returns_none_when_create_time_missing():
+    assert _review_age_days({}) is None
+    assert _review_age_days({"createTime": None}) is None
+
+
+def test_review_age_days_returns_none_for_malformed_timestamp():
+    assert _review_age_days({"createTime": "not-a-date"}) is None
+
+
+def test_review_age_days_parses_rfc3339_with_z_suffix():
+    # A timestamp of "now" should have an age very close to 0.
+    from datetime import datetime, timezone
+    now_ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    age = _review_age_days({"createTime": now_ts})
+    assert age is not None
+    assert age < 0.01  # should be less than ~15 minutes
+
+
+# ---------------------------------------------------------------------------
+# Age filter in run_reviews_for_store
+# ---------------------------------------------------------------------------
+
+def _make_review(review_id: str, create_time: str, *, star: str = "FOUR") -> dict:
+    return {
+        "name": f"accounts/1/locations/1/reviews/{review_id}",
+        "reviewId": review_id,
+        "reviewer": {"displayName": "テスト"},
+        "starRating": star,
+        "comment": "コメント",
+        "createTime": create_time,
+    }
+
+
+def test_old_reviews_are_skipped_by_age_filter():
+    gbp = MagicMock()
+    old_review = _make_review("old1", "2020-01-01T00:00:00Z")
+    gbp.list_reviews.return_value = [old_review]
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1, "max_review_age_days": 30}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    gbp.reply_to_review.assert_not_called()
+    assert result["replied"] == 0
+
+
+def test_recent_reviews_pass_age_filter():
+    from datetime import datetime, timezone, timedelta
+    gbp = MagicMock()
+    recent_ts = (datetime.now(tz=timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    recent_review = _make_review("rec1", recent_ts)
+    gbp.list_reviews.return_value = [recent_review]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1, "max_review_age_days": 30}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    assert result["replied"] == 1
+
+
+def test_review_with_no_create_time_is_included_by_age_filter():
+    """Reviews missing createTime are treated as 'include' (fail-safe)."""
+    gbp = MagicMock()
+    review_no_ts = {
+        "name": "accounts/1/locations/1/reviews/notimestamp",
+        "reviewId": "notimestamp",
+        "reviewer": {"displayName": "テスト"},
+        "starRating": "FOUR",
+        "comment": "コメント",
+    }
+    gbp.list_reviews.return_value = [review_no_ts]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1, "max_review_age_days": 30}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    assert result["replied"] == 1
+
+
+def test_age_filter_disabled_when_max_review_age_days_is_zero():
+    """max_review_age_days=0 disables the filter; old reviews pass through."""
+    gbp = MagicMock()
+    old_review = _make_review("old_nodisable", "2010-01-01T00:00:00Z")
+    gbp.list_reviews.return_value = [old_review]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1, "max_review_age_days": 0}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    assert result["replied"] == 1
+
+
+def test_per_store_max_review_age_days_override():
+    """max_review_age_days can be overridden per store via the overrides section."""
+    from datetime import datetime, timezone, timedelta
+    gbp = MagicMock()
+    # 40 days old — would pass a 90-day default but fail a 30-day per-store override
+    ts_40d = (datetime.now(tz=timezone.utc) - timedelta(days=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    review_40d = _make_review("r40", ts_40d)
+    gbp.list_reviews.return_value = [review_40d]
+    store_with_override = {**_STORE, "overrides": {"max_review_age_days": 30}}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1, "max_review_age_days": 90}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf):
+        result = run_reviews_for_store(store_with_override, gbp, dry_run=False)
+    gbp.reply_to_review.assert_not_called()
+    assert result["replied"] == 0

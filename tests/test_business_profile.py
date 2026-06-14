@@ -157,3 +157,72 @@ def test_auth_session_merges_caller_headers():
     headers = session._auth_headers({"Content-Type": "multipart/related"})
     assert headers["Authorization"] == "Bearer tok_xyz"
     assert headers["Content-Type"] == "multipart/related"
+
+
+# ---------------------------------------------------------------------------
+# Timeout and retry configuration
+# ---------------------------------------------------------------------------
+
+def test_auth_session_get_passes_default_timeout():
+    """GET requests from _AuthSession must carry the (connect, read) timeout."""
+    from unittest.mock import patch as _patch
+    creds = MagicMock()
+    creds.valid = True
+    creds.token = "tok"
+    auth = _AuthSession(creds)
+    mock_resp = _ok({})
+    with _patch.object(auth._session, "get", return_value=mock_resp) as mock_get:
+        auth.get("https://example.com/api")
+    call_kwargs = mock_get.call_args.kwargs
+    assert "timeout" in call_kwargs
+    connect_t, read_t = call_kwargs["timeout"]
+    assert connect_t > 0 and read_t > 0
+
+
+def test_auth_session_post_passes_default_timeout():
+    """POST requests from _AuthSession must carry the (connect, read) timeout."""
+    from unittest.mock import patch as _patch
+    creds = MagicMock()
+    creds.valid = True
+    creds.token = "tok"
+    auth = _AuthSession(creds)
+    mock_resp = _ok({})
+    with _patch.object(auth._session, "post", return_value=mock_resp) as mock_post:
+        auth.post("https://example.com/api", json={"key": "value"})
+    call_kwargs = mock_post.call_args.kwargs
+    assert "timeout" in call_kwargs
+    connect_t, read_t = call_kwargs["timeout"]
+    assert connect_t > 0 and read_t > 0
+
+
+def test_auth_session_put_passes_default_timeout():
+    """PUT requests from _AuthSession must carry the (connect, read) timeout."""
+    from unittest.mock import patch as _patch
+    creds = MagicMock()
+    creds.valid = True
+    creds.token = "tok"
+    auth = _AuthSession(creds)
+    mock_resp = _ok({})
+    with _patch.object(auth._session, "put", return_value=mock_resp) as mock_put:
+        auth.put("https://example.com/api", json={"key": "value"})
+    call_kwargs = mock_put.call_args.kwargs
+    assert "timeout" in call_kwargs
+    connect_t, read_t = call_kwargs["timeout"]
+    assert connect_t > 0 and read_t > 0
+
+
+def test_retry_config_includes_put():
+    """PUT must be in the allowed_methods of the retry adapter so reply_to_review retries."""
+    from requests.adapters import HTTPAdapter
+    creds = MagicMock()
+    creds.valid = True
+    creds.token = "tok"
+    session = _AuthSession(creds)
+    # Inspect the HTTPAdapter mounted on 'https://'
+    adapter = session._session.get_adapter("https://example.com")
+    assert isinstance(adapter, HTTPAdapter)
+    # urllib3 Retry stores allowed_methods as a frozenset
+    allowed = adapter.max_retries.allowed_methods
+    assert "PUT" in allowed
+    assert "GET" in allowed
+    assert "POST" not in allowed  # POST is not idempotent — must never be auto-retried

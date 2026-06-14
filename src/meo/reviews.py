@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from . import config as cfg
@@ -56,6 +57,28 @@ def run_reviews_for_store(
                 "[%s] %d review(s) skipped (replied locally, awaiting GBP propagation).",
                 store_key, local_skip,
             )
+
+    # --- Age filter --- #
+    # Skip reviews older than max_review_age_days to prevent mass-replying to
+    # year-old reviews on the first run after API access is granted.
+    # Default 90 days is generous enough to catch anything recent; set to 0 to
+    # disable and reply to all unreplied reviews regardless of age.
+    max_age_days: int = cfg.effective_defaults(store).get("max_review_age_days", 90)
+    if max_age_days > 0:
+        fresh, too_old = [], []
+        for r in unreplied:
+            age = _review_age_days(r)
+            if age is not None and age > max_age_days:
+                too_old.append(r)
+            else:
+                fresh.append(r)
+        if too_old:
+            logger.info(
+                "[%s] %d review(s) skipped (older than max_review_age_days=%d): %s",
+                store_key, len(too_old), max_age_days,
+                [r.get("reviewer", {}).get("displayName", "?") for r in too_old],
+            )
+        unreplied = fresh
 
     unreplied_total = len(unreplied)  # save before the cap so deferred is accurate
     logger.info("[%s] %d unreplied review(s) of %d total.", store_key, unreplied_total, len(reviews))
@@ -170,3 +193,21 @@ def _extract_review_id(review: dict[str, Any]) -> str:
     """
     name = review.get("reviewId") or review.get("name", "")
     return name.split("/")[-1]
+
+
+def _review_age_days(review: dict[str, Any]) -> float | None:
+    """Return the age of a review in fractional days, or None if undetermined.
+
+    Parses the GBP API's RFC 3339 createTime field.  Returns None for reviews
+    with a missing or unparseable timestamp — callers treat None as "include
+    this review" so we never silently drop reviews we can't date.
+    """
+    ts = review.get("createTime")
+    if not ts:
+        return None
+    try:
+        # GBP returns timestamps like "2024-01-15T10:00:00.000Z"
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return (datetime.now(tz=timezone.utc) - dt).total_seconds() / 86400
+    except (ValueError, TypeError):
+        return None

@@ -24,6 +24,7 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "max_reply_chars",
     "max_replies_per_run",
     "min_star_autoreply",
+    "max_review_age_days",
 })
 
 

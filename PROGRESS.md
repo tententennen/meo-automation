@@ -1,6 +1,80 @@
 # PROGRESS
 
-## Status: All milestones complete — 299/299 tests green
+## Status: All milestones complete — 313/313 tests green
+
+---
+
+## Completed this run (run 22)
+
+### Feature: Request timeouts in `_AuthSession` (`src/meo/business_profile.py`)
+
+**Problem**: All HTTP requests in `_AuthSession` had no timeout. A stalled TCP
+connection (e.g. a GBP API server that accepts the connection but sends no
+response) would block the tool forever until the GitHub Actions job timeout
+killed the runner.  In production this would silently starve all remaining stores.
+
+**Fix**: Added `_DEFAULT_TIMEOUT = (10, 60)` — 10 s to connect, 60 s to receive
+the first byte.  All three request methods (`get`, `post`, `put`) call
+`kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)` so callers can still override it
+in the rare case a specific request genuinely needs more time.
+
+### Feature: Idempotent PUT retry (`src/meo/business_profile.py`)
+
+**Problem**: The retry adapter previously set `allowed_methods=["GET"]`.
+The `reply_to_review` endpoint uses **PUT** (which is idempotent by HTTP
+semantics — retrying it sets the same reply text again, never creates duplicates).
+A transient 500 or 429 on a PUT caused `reply_to_review` to fail immediately
+with no retry, while an equivalent failure on a GET would have been retried
+automatically.
+
+**Fix**: Added `"PUT"` to `allowed_methods`.  `"POST"` is explicitly excluded
+(and remains excluded) because `create_local_post` is not idempotent —
+auto-retrying a POST would publish duplicate posts.  The updated docstring
+explains the reasoning directly.
+
+### Feature: Review age filter (`src/meo/reviews.py`, `config/content.yaml`)
+
+**Problem**: On the first live run after API access is granted, `run_reviews_for_store()`
+would attempt to reply to every unreplied review ever written — potentially dozens
+of months-old reviews.  This would:
+- Confuse customers (seeing AI replies on old reviews out of the blue)
+- Burn LLM quota unnecessarily
+- Be limited only by `max_replies_per_run`, hiding the root cause
+
+**Fix**: Added `max_review_age_days: 90` to `config/content.yaml` defaults.
+In `run_reviews_for_store()`, reviews whose `createTime` is older than this
+threshold are skipped with an `INFO` log listing the skipped reviewers.
+
+Key design decisions:
+- Parsed from the GBP API's RFC 3339 `createTime` field (e.g. `"2024-01-15T10:00:00.000Z"`).
+- Reviews with **missing or unparseable** `createTime` are treated as "include" (fail-safe).
+- `max_review_age_days: 0` disables the filter entirely (reply to all reviews regardless of age).
+- The filter runs **before** `unreplied_total` is saved, so it doesn't inflate the `deferred` count.
+- Fully overridable per store via the `overrides` section in `config/stores.yaml`.
+
+Added `_review_age_days(review)` helper — returns fractional days (float) or
+`None` if the timestamp is absent/malformed.
+
+Added `"max_review_age_days"` to `_ALLOWED_OVERRIDE_KEYS` in `validator.py`.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/business_profile.py` | `_DEFAULT_TIMEOUT`; `setdefault("timeout", ...)` in all three methods; `"PUT"` added to `allowed_methods`; updated docstring |
+| `src/meo/reviews.py` | `from datetime import datetime, timezone`; `_review_age_days()` helper; age-filter block before `unreplied_total` |
+| `config/content.yaml` | `defaults.max_review_age_days: 90` |
+| `src/meo/validator.py` | `"max_review_age_days"` added to `_ALLOWED_OVERRIDE_KEYS` |
+
+### New tests (+14 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_business_profile.py` | `test_auth_session_get_passes_default_timeout`; `test_auth_session_post_passes_default_timeout`; `test_auth_session_put_passes_default_timeout`; `test_retry_config_includes_put` (4) |
+| `tests/test_reviews.py` | `test_review_age_days_returns_a_positive_float_for_recent_review`; `test_review_age_days_returns_none_when_create_time_missing`; `test_review_age_days_returns_none_for_malformed_timestamp`; `test_review_age_days_parses_rfc3339_with_z_suffix`; `test_old_reviews_are_skipped_by_age_filter`; `test_recent_reviews_pass_age_filter`; `test_review_with_no_create_time_is_included_by_age_filter`; `test_age_filter_disabled_when_max_review_age_days_is_zero`; `test_per_store_max_review_age_days_override` (9) |
+| `tests/test_validator.py` | `test_validate_stores_max_review_age_days_is_a_valid_override_key` (1) |
+
+Total: **313/313 tests** (was 299).
 
 ---
 
@@ -1535,7 +1609,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (299/299).
+All code is complete and the test suite is green (313/313).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:

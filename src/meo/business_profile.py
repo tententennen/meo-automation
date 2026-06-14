@@ -195,23 +195,32 @@ class BusinessProfileClient:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+_DEFAULT_TIMEOUT = (10, 60)  # (connect_seconds, read_seconds)
+
+
 class _AuthSession:
     """A thin requests wrapper that injects a fresh Bearer token on each call.
 
-    GET requests are automatically retried (up to 3 times with backoff) on
-    transient failures (429, 5xx). POST/PUT are not auto-retried to avoid
-    duplicate resource creation.
+    GET and PUT requests are automatically retried (up to 3 times with backoff)
+    on transient failures (429, 5xx).  GET is safe to retry by definition; PUT
+    is idempotent so retrying a failed reply_to_review never creates duplicates.
+    POST is NOT retried — create_local_post is not idempotent and retrying would
+    publish duplicate posts.
+
+    All requests carry a (connect=10s, read=60s) timeout so the tool never
+    hangs indefinitely on a stalled network connection.
     """
 
     def __init__(self, credentials: Credentials) -> None:
         self._creds = credentials
         self._session = requests.Session()
-        # Retry only safe/idempotent GET requests on transient failures.
+        # Retry GET (safe) and PUT (idempotent) on transient failures.
+        # POST is excluded — retrying create_local_post would publish duplicate posts.
         _retry = Retry(
             total=3,
             backoff_factor=1.5,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET"],
+            allowed_methods=["GET", "PUT"],
             raise_on_status=False,
         )
         self._session.mount("https://", HTTPAdapter(max_retries=_retry))
@@ -231,12 +240,15 @@ class _AuthSession:
 
     def get(self, url: str, **kwargs: Any) -> requests.Response:
         extra = kwargs.pop("headers", None)
+        kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
         return self._session.get(url, headers=self._auth_headers(extra), **kwargs)
 
     def post(self, url: str, **kwargs: Any) -> requests.Response:
         extra = kwargs.pop("headers", None)
+        kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
         return self._session.post(url, headers=self._auth_headers(extra), **kwargs)
 
     def put(self, url: str, **kwargs: Any) -> requests.Response:
         extra = kwargs.pop("headers", None)
+        kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
         return self._session.put(url, headers=self._auth_headers(extra), **kwargs)
