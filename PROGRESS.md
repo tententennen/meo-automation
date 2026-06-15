@@ -1,6 +1,77 @@
 # PROGRESS
 
-## Status: All milestones complete — 313/313 tests green
+## Status: All milestones complete — 317/317 tests green
+
+---
+
+## Completed this run (run 23)
+
+### Feature: `--no-env` flag for `meo-validate` (`src/meo/tools/validate.py`)
+
+**Problem**: `meo-validate` always ran `validate_all(check_env=True)`, which
+requires all four credential env vars to be set.  In CI (where credentials live
+in repository secrets and are not exported to the validate step), running
+`meo-validate` would always fail with missing-credential errors even when the
+only intent was to catch YAML syntax and structural errors in `config/stores.yaml`
+and `config/content.yaml`.
+
+**Fix**: Added an `--no-env` flag via `argparse`.
+
+```bash
+meo-validate              # full check: config structure + env var presence
+meo-validate --no-env     # config structure only — safe in CI without credentials
+```
+
+When `--no-env` is passed, `validate_all(check_env=False)` is called and the
+success message reads `"config structure checks passed"` instead of
+`"config + environment checks passed"` so it's clear what was validated.
+
+### CI: config validation step (`.github/workflows/ci.yml`)
+
+Added a new step between `Install dependencies` and `Run tests`:
+
+```yaml
+- name: Validate config structure
+  run: python -m meo.tools.validate --no-env
+```
+
+This means every push/PR to `main` now checks that `config/stores.yaml` and
+`config/content.yaml` are structurally valid — required sections present, known
+industry values, supported LLM provider, no unknown override keys.
+
+Previously a typo in a config file would only be caught on the first live run.
+Now it's caught immediately in CI.
+
+### CI: test coverage reporting (`.github/workflows/ci.yml`)
+
+Updated the test step from:
+```yaml
+run: python -m pytest tests/ -v --tb=short
+```
+to:
+```yaml
+run: python -m pytest tests/ -v --tb=short --cov=meo --cov-report=term-missing
+```
+
+Coverage is now printed to the Actions log after every CI run so regressions in
+test completeness are visible without a separate tool.  No minimum threshold is
+enforced (non-blocking) — the report is informational.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/validate.py` | `argparse` parser with `--no-env` flag; `check_env=not args.no_env` passed to `validate_all`; success message distinguishes scope |
+| `tests/test_validator.py` | 4 new CLI tests: exits 0 on valid config+env; exits 1 on missing env; `--no-env` passes without credentials; `--no-env` still catches config errors |
+| `.github/workflows/ci.yml` | New `Validate config structure` step; coverage flag added to pytest invocation |
+
+### New tests (+4 tests)
+
+| File | New tests |
+|---|---|
+| `tests/test_validator.py` | `test_main_exits_0_when_config_and_env_are_valid`; `test_main_exits_1_when_env_vars_are_missing`; `test_main_no_env_skips_credential_check`; `test_main_no_env_still_catches_config_errors` |
+
+Total: **317/317 tests** (was 313).
 
 ---
 

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from meo import validator as v
+from meo.tools.validate import main as validate_main
 
 
 # ---------------------------------------------------------------------------
@@ -291,3 +292,61 @@ def test_validate_stores_max_review_age_days_is_a_valid_override_key():
         }
     }
     assert v.validate_stores(stores) == []
+
+
+# ---------------------------------------------------------------------------
+# meo-validate CLI (tools/validate.py main())
+# ---------------------------------------------------------------------------
+
+def test_main_exits_0_when_config_and_env_are_valid(capsys):
+    with patch("meo.validator.cfg.stores", return_value=_VALID_STORES), \
+         patch("meo.validator.cfg.content", return_value=_VALID_CONTENT), \
+         patch.dict(os.environ, _FULL_ENV, clear=True), \
+         patch("sys.argv", ["meo-validate"]), \
+         pytest.raises(SystemExit) as exc_info:
+        validate_main()
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "OK" in out
+    assert "config + environment" in out
+
+
+def test_main_exits_1_when_env_vars_are_missing(capsys):
+    with patch("meo.validator.cfg.stores", return_value=_VALID_STORES), \
+         patch("meo.validator.cfg.content", return_value=_VALID_CONTENT), \
+         patch.dict(os.environ, {}, clear=True), \
+         patch("sys.argv", ["meo-validate"]), \
+         pytest.raises(SystemExit) as exc_info:
+        validate_main()
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "FAILED" in out
+
+
+def test_main_no_env_skips_credential_check(capsys):
+    """--no-env passes even with no credentials set, if config is valid."""
+    with patch("meo.validator.cfg.stores", return_value=_VALID_STORES), \
+         patch("meo.validator.cfg.content", return_value=_VALID_CONTENT), \
+         patch.dict(os.environ, {}, clear=True), \
+         patch("sys.argv", ["meo-validate", "--no-env"]), \
+         pytest.raises(SystemExit) as exc_info:
+        validate_main()
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "OK" in out
+    assert "config structure" in out
+
+
+def test_main_no_env_still_catches_config_errors(capsys):
+    """--no-env does not hide structural errors in the YAML config files."""
+    bad_content = {k: val for k, val in _VALID_CONTENT.items() if k != "llm"}
+    with patch("meo.validator.cfg.stores", return_value=_VALID_STORES), \
+         patch("meo.validator.cfg.content", return_value=bad_content), \
+         patch.dict(os.environ, {}, clear=True), \
+         patch("sys.argv", ["meo-validate", "--no-env"]), \
+         pytest.raises(SystemExit) as exc_info:
+        validate_main()
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "FAILED" in out
+    assert "llm" in out
