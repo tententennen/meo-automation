@@ -1,6 +1,55 @@
 # PROGRESS
 
-## Status: All milestones complete — 317/317 tests green
+## Status: All milestones complete — 318/318 tests green
+
+---
+
+## Completed this run (run 24)
+
+### Fix: Drive image-selection errors now fall back to "no photo" instead of failing the post (`src/meo/posts.py`)
+
+**Problem**: `run_post_for_store()` had three separate Drive interactions:
+
+1. `drive.pick_random_image()` — **no try/except** ← the bug
+2. `drive.download_image()` — already in try/except
+3. `gbp.upload_media_bytes()` — already in try/except
+
+If `pick_random_image()` raised (e.g. because `drive_folder_id` was still the
+TODO placeholder in `stores.yaml`, or a transient Drive API error), the
+exception propagated all the way up to `main.py`, where it was caught and
+recorded as a **post failure** for the entire store.
+
+This is especially problematic on the first live run: a store owner who has
+filled in `location_id` but not yet `drive_folder_id` would see their posts
+fail entirely, rather than going out without a photo as the warning in `main.py`
+suggests they would.
+
+**Fix**: Wrapped `pick_random_image()` in a try/except in `posts.py`.  On any
+exception, `image_meta` is set to `None` and a `WARNING` is logged — the same
+graceful path taken when no images exist in the folder.
+
+```
+WARNING meo.posts: [the_body_kyoto] Drive image selection failed (invalid folder ID); posting without photo.
+```
+
+This is consistent with how download and upload errors were already handled:
+all three Drive interactions now degrade gracefully to "post without photo"
+rather than aborting the post.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/posts.py` | `pick_random_image()` wrapped in `try/except Exception`; sets `image_meta = None` and logs WARNING on failure |
+| `tests/test_posts.py` | New test: `test_drive_pick_image_error_falls_back_to_no_photo` — verifies that a Drive exception during image selection still results in `status="posted"` with `media_url=None` and `record_image` not called |
+
+### New test (+1 test)
+
+| File | New test |
+|---|---|
+| `tests/test_posts.py` | `test_drive_pick_image_error_falls_back_to_no_photo` |
+
+Total: **318/318 tests** (was 317).
 
 ---
 
