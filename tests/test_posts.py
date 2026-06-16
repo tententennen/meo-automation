@@ -121,6 +121,28 @@ def test_upload_failure_no_fallback_posts_without_photo():
     assert result["status"] == "posted"
 
 
+def test_drive_pick_image_error_falls_back_to_no_photo():
+    """If pick_random_image raises (e.g. TODO/invalid folder ID), the post still succeeds."""
+    gbp, drive, post_text = _make_mocks()
+    drive.pick_random_image.side_effect = Exception("Drive API error: invalid folder")
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image") as mock_record_image, \
+         patch("meo.posts.record_theme"):
+        result = run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    drive.download_image.assert_not_called()
+    gbp.upload_media_bytes.assert_not_called()
+    gbp.create_local_post.assert_called_once()
+    call_media_url = gbp.create_local_post.call_args.args[2]
+    assert call_media_url is None  # post with no photo
+    mock_record_image.assert_not_called()  # no image to record
+    assert result["status"] == "posted"
+
+
 def test_no_image_posts_without_photo():
     gbp, drive, post_text = _make_mocks()
     drive.pick_random_image.return_value = None

@@ -103,7 +103,17 @@ def run_post_for_store(
 
     # --- Image selection (prefer images not used recently) ---
     recent_image_ids = get_recent_images(store_key)
-    image_meta = drive.pick_random_image(folder_id, recent_ids=recent_image_ids)
+    try:
+        image_meta = drive.pick_random_image(folder_id, recent_ids=recent_image_ids)
+    except Exception as exc:
+        # Treat Drive errors during image selection as "no photo available" so
+        # the post still goes out.  Common cause: drive_folder_id still set to
+        # the TODO placeholder in stores.yaml.
+        logger.warning(
+            "[%s] Drive image selection failed (%s); posting without photo.",
+            store_key, exc,
+        )
+        image_meta = None
     media_url: str | None = None
 
     if image_meta:
