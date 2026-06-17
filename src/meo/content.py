@@ -77,7 +77,7 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     industry = store.get("industry", "beauty_salon")
     tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
     banned = ", ".join(conf.get("banned_words", []))
-    max_chars = conf["defaults"]["max_post_chars"]
+    max_chars = cfg.effective_defaults(store)["max_post_chars"]
 
     system = (
         f"あなたはGoogleビジネスプロフィールの投稿文を書くプロのコピーライターです。"
@@ -168,7 +168,7 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     industry = store.get("industry", "beauty_salon")
     tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
     banned = ", ".join(conf.get("banned_words", []))
-    max_chars = conf["defaults"]["max_reply_chars"]
+    max_chars = cfg.effective_defaults(store)["max_reply_chars"]
 
     reviewer_name = review.get("reviewer", {}).get("displayName", "お客様")
     star_rating = review.get("starRating", "FIVE")

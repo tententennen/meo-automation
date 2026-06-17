@@ -1,6 +1,64 @@
 # PROGRESS
 
-## Status: All milestones complete — 318/318 tests green
+## Status: All milestones complete — 320/320 tests green
+
+---
+
+## Completed this run (run 25)
+
+### Fix: per-store `max_post_chars` / `max_reply_chars` overrides were silently ignored (`src/meo/content.py`)
+
+**Problem**: `generate_post()` and `generate_reply()` read the character-limit
+values directly from `cfg.content()["defaults"]`:
+
+```python
+max_chars = conf["defaults"]["max_post_chars"]   # generate_post()
+max_chars = conf["defaults"]["max_reply_chars"]  # generate_reply()
+```
+
+`max_post_chars` and `max_reply_chars` are listed in `_ALLOWED_OVERRIDE_KEYS`
+(validator.py) and documented in the commented-out `overrides` templates in
+`config/stores.yaml`, so owners have been led to believe that setting e.g.
+
+```yaml
+mybear_studio_kyoto:
+  overrides:
+    max_post_chars: 800
+```
+
+would shorten the generated post text for that store.  In reality it had zero
+effect: the post was still truncated at the global 1500-char limit because both
+generators bypassed `effective_defaults()`.
+
+**Fix**: Both generators now read their character limits through
+`cfg.effective_defaults(store)`, which merges global defaults with any
+per-store overrides — the same function already used by `posts.py` and
+`reviews.py` for `post_cadence_days`, `max_replies_per_run`, etc.
+
+```python
+max_chars = cfg.effective_defaults(store)["max_post_chars"]   # generate_post()
+max_chars = cfg.effective_defaults(store)["max_reply_chars"]  # generate_reply()
+```
+
+All other values (`tone_profile`, `banned`, `industry_tones`) continue to read
+from the global `cfg.content()` — only the truncation limit respects overrides,
+which matches the documented intent.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/content.py` | `generate_post()`: `conf["defaults"]["max_post_chars"]` → `cfg.effective_defaults(store)["max_post_chars"]`; `generate_reply()`: `conf["defaults"]["max_reply_chars"]` → `cfg.effective_defaults(store)["max_reply_chars"]` |
+| `tests/test_content.py` | `test_generate_post_respects_per_store_max_chars_override`; `test_generate_reply_respects_per_store_max_chars_override` (2 new tests) |
+
+### New tests (+2 tests)
+
+| File | New test |
+|---|---|
+| `tests/test_content.py` | `test_generate_post_respects_per_store_max_chars_override` — LLM output truncated to override value (200), not global default (1500) |
+| `tests/test_content.py` | `test_generate_reply_respects_per_store_max_chars_override` — reply truncated to override value (150), not global default (4096) |
+
+Total: **320/320 tests** (was 318).
 
 ---
 
@@ -1729,7 +1787,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (313/313).
+All code is complete and the test suite is green (320/320).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:

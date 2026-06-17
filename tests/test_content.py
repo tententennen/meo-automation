@@ -452,3 +452,34 @@ def test_generate_reply_logs_warning_when_banned_word_found(caplog):
         with caplog.at_level(logging.WARNING, logger="meo.content"):
             content.generate_reply(_REVIEW, _STORE)
     assert any("激安" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Per-store max_chars override tests
+# ---------------------------------------------------------------------------
+
+def test_generate_post_respects_per_store_max_chars_override():
+    """A per-store max_post_chars override must constrain the generated text.
+
+    This verifies the fix: generate_post() must use cfg.effective_defaults(store)
+    for max_post_chars, not the global defaults dict.  A store with a small override
+    (200 chars) must produce a shorter result than the global default (1500 chars).
+    """
+    store_with_override = {**_STORE, "overrides": {"max_post_chars": 200}}
+    long_text = "あ" * 9999
+    with _mock_llm(long_text):
+        result = content.generate_post(store_with_override)
+    assert len(result) <= 200
+
+
+def test_generate_reply_respects_per_store_max_chars_override():
+    """A per-store max_reply_chars override must constrain the generated reply.
+
+    This verifies the fix: generate_reply() must use cfg.effective_defaults(store)
+    for max_reply_chars, not the global defaults dict.
+    """
+    store_with_override = {**_STORE, "overrides": {"max_reply_chars": 150}}
+    long_text = "あ" * 9999
+    with _mock_llm(long_text):
+        result = content.generate_reply(_REVIEW, store_with_override)
+    assert len(result) <= 150
