@@ -1,6 +1,49 @@
 # PROGRESS
 
-## Status: All milestones complete — 320/320 tests green
+## Status: All milestones complete — 344/344 tests green
+
+---
+
+## Completed this run (run 26)
+
+### Tests: `meo-status` now has full test coverage (`tests/test_status.py`)
+
+**Problem**: `src/meo/tools/status.py` was the only module with 0% test coverage.
+All 116 statements were exercised only via manual invocation — no automated
+regression protection existed for:
+- `_load_state()` (missing file, valid JSON, corrupt JSON)
+- `_days_ago()` (today / yesterday / N days / invalid input)
+- `main()` exit codes (0 = all ready, 1 = missing env or TODO placeholders)
+- Output correctness (store names, env var names, last-post date, LLM config,
+  state file info, partial-config message, OpenAI key check)
+- Security: secret values must never appear in output
+
+**Fix**: Added `tests/test_status.py` — 24 new tests covering all testable paths
+in the module.  Coverage went from **0% → 97%** (the remaining 3 lines are the
+`dotenv` import guard and `if __name__ == "__main__"` block, both untestable
+in unit test context).
+
+Key test groups:
+
+| Group | Tests |
+|---|---|
+| `_load_state()` | missing file → `{}`; valid JSON → parsed dict; corrupt JSON → `{}` |
+| `_days_ago()` | "today", "yesterday", "N days ago", invalid input → "?" |
+| `main()` exit codes | exits 0 (all ready); exits 1 (missing env var); exits 1 (TODO location_id); exits 1 (partial store config) |
+| `main()` output | store names; env var names; "never" on no post; last-post date from state; "Ready" message; state-file size; LLM provider + model |
+| Security | secret values do not appear in stdout |
+| OpenAI | flags `OPENAI_API_KEY` missing when `llm.provider: openai` |
+| Messaging | "Partially configured" shown for mixed stores; "Next step" shown when all TODO |
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `tests/test_status.py` | New: 24 tests for `_load_state`, `_days_ago`, `main()` |
+
+### New tests (+24 tests)
+
+Total: **344/344 tests** (was 320).
 
 ---
 
