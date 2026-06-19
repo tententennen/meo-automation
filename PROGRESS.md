@@ -1,6 +1,83 @@
 # PROGRESS
 
-## Status: All milestones complete — 344/344 tests green
+## Status: All milestones complete — 362/362 tests green (96% coverage)
+
+---
+
+## Completed this run (run 27)
+
+### Tests: closed coverage gaps in `main.py`, `content.py`, and `discover_locations.py`
+
+**Problem**: Three modules had meaningful untested branches that could regress silently:
+
+| Module | Previous coverage | Missing paths |
+|---|---|---|
+| `src/meo/main.py` | 79% | Config-validation failure; store with TODO `location_id`; store with TODO `drive_folder_id`; post exception caught; reviews exception caught |
+| `src/meo/content.py` | 90% | `anthropic.RateLimitError` → `RuntimeError` conversion; `anthropic.APIError` → `RuntimeError`; same two paths for OpenAI |
+| `src/meo/tools/discover_locations.py` | 0% | All of `_get()` and `main()` — the setup helper operators run exactly once to find location IDs |
+
+**Fix**: +18 new tests across three files.
+
+**`tests/test_main.py` — 5 new tests:**
+
+| Test | What it covers |
+|---|---|
+| `test_config_validation_errors_exit_1_before_auth` | `validate_all()` returning errors → exit 1 before `get_credentials` is called |
+| `test_store_with_todo_location_id_is_skipped_and_exits_1` | `location_id` containing "TODO" → store skipped, no post/review call, exit 1 |
+| `test_store_with_todo_drive_folder_id_logs_warning_but_exits_0` | `drive_folder_id` containing "TODO" → warning log, post + reviews still run, exit 0 |
+| `test_post_exception_is_caught_and_causes_exit_1` | `run_post_for_store` raising → exception caught, `had_error=True`, exit 1 |
+| `test_reviews_exception_is_caught_and_causes_exit_1` | `run_reviews_for_store` raising → exception caught, `had_error=True`, exit 1 |
+
+**`tests/test_content.py` — 4 new tests (+ shared helpers):**
+
+| Test | What it covers |
+|---|---|
+| `test_call_anthropic_rate_limit_error_becomes_runtime_error` | `anthropic.RateLimitError` from `messages.create` is caught and re-raised as `RuntimeError` (feeds retry logic) |
+| `test_call_anthropic_api_error_becomes_runtime_error` | `anthropic.APIError` → `RuntimeError("Anthropic API error: ...")` |
+| `test_call_openai_rate_limit_error_becomes_runtime_error` | `openai.RateLimitError` → `RuntimeError` |
+| `test_call_openai_api_error_becomes_runtime_error` | `openai.APIError` → `RuntimeError("OpenAI API error: ...")` |
+
+These are the handler lines that convert provider-specific exceptions into the `RuntimeError` that `_call_with_retry` uses to detect retryable failures. Without these tests, the retry system's error-detection path had no regression protection.
+
+**`tests/test_discover_locations.py` — 9 new tests (new file):**
+
+*`TestGet` — 4 tests:*
+- Returns parsed JSON on HTTP 200
+- Passes an empty `{}` dict when no `params` argument is given
+- Passes caller-supplied `params` through to `session.get`
+- Raises on HTTP error (via `resp.raise_for_status`)
+
+*`TestMain` — 5 tests:*
+- No accounts found → `sys.exit(1)`
+- Account with locations → prints `location_id` and store title to stdout
+- Account with no locations → prints `(no locations)`, `sys.exit(0)`
+- Location-fetch error caught → prints "Could not fetch locations", `sys.exit(0)`
+- Output includes a copy-paste YAML snippet with `location_id: "..."` for found locations
+
+**Coverage change:**
+
+| Module | Before | After |
+|---|---|---|
+| `main.py` | 79% | 96% |
+| `content.py` | 90% | 96% |
+| `discover_locations.py` | 0% | 96% |
+| **Total** | **90%** | **96%** |
+
+Remaining uncovered lines across all modules are exclusively:
+- `try: from dotenv import load_dotenv; load_dotenv()` blocks (untestable in unit context — only reached when `python-dotenv` is installed)
+- `if __name__ == "__main__":` guards (untestable in unit context)
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `tests/test_main.py` | +5 new tests for error-branch coverage |
+| `tests/test_content.py` | +4 new tests for Anthropic/OpenAI exception handler coverage + shared helper factories |
+| `tests/test_discover_locations.py` | New file: 9 tests for `_get()` and `main()` |
+
+### New tests (+18 tests)
+
+Total: **362/362 tests** (was 344).
 
 ---
 
@@ -1830,7 +1907,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (320/320).
+All code is complete and the test suite is green (362/362, 96% coverage).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:

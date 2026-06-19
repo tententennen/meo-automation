@@ -192,3 +192,111 @@ def test_force_flag_forwarded_to_run_post_for_store():
     assert len(captured_kwargs) == 1
     assert captured_kwargs[0]["force"] is True
     assert captured_kwargs[0]["dry_run"] is False
+
+
+# ---------------------------------------------------------------------------
+# Error-path coverage — branches not exercised by the happy-path tests above
+# ---------------------------------------------------------------------------
+
+def test_config_validation_errors_exit_1_before_auth(monkeypatch):
+    """validate_all() returning errors must exit 1 without ever calling get_credentials."""
+    # Override the autouse bypass so this test actually sees an error.
+    monkeypatch.setattr("meo.main.validate_all", lambda **_: ["store.location_id is required"])
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials") as mock_auth:
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+    mock_auth.assert_not_called()
+
+
+def test_store_with_todo_location_id_is_skipped_and_exits_1():
+    """A store whose location_id value contains 'TODO' must be skipped; exit code must be 1."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    todo_store = _fake_store("the_body_kyoto", location_id="TODO_fill_in_location_id")
+
+    with patch("sys.argv", ["meo", "--dry-run"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=[todo_store]), \
+         patch("meo.main.run_post_for_store") as mock_post, \
+         patch("meo.main.run_reviews_for_store") as mock_reviews:
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+    assert exc.value.code == 1
+    mock_post.assert_not_called()
+    mock_reviews.assert_not_called()
+
+
+def test_store_with_todo_drive_folder_id_logs_warning_but_exits_0():
+    """A TODO drive_folder_id logs a warning but does NOT cause had_error; exit code is 0."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    store = {
+        "key": "the_body_kyoto",
+        "name": "THE BODY 京都店",
+        "industry": "beauty_salon",
+        "location_id": "accounts/1/locations/2",
+        "drive_folder_id": "TODO_fill_in_drive_folder",
+    }
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "dry_run", "post_text": "テスト"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo", "--dry-run"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=[store]), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews):
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+    assert exc.value.code == 0  # warning only, not an error
+
+
+def test_post_exception_is_caught_and_causes_exit_1():
+    """An unhandled exception from run_post_for_store must be caught; exit code must be 1."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo", "--dry-run"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=RuntimeError("GBP timeout")), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews):
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+    assert exc.value.code == 1
+
+
+def test_reviews_exception_is_caught_and_causes_exit_1():
+    """An unhandled exception from run_reviews_for_store must be caught; exit code must be 1."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "dry_run", "post_text": "テスト"}
+
+    with patch("sys.argv", ["meo", "--dry-run"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=RuntimeError("Review API error")):
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+    assert exc.value.code == 1

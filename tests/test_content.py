@@ -483,3 +483,105 @@ def test_generate_reply_respects_per_store_max_chars_override():
     with _mock_llm(long_text):
         result = content.generate_reply(_REVIEW, store_with_override)
     assert len(result) <= 150
+
+
+# ---------------------------------------------------------------------------
+# Provider exception-handler coverage
+# Tests that provider-specific errors are correctly converted to RuntimeError
+# (which _call_with_retry uses to detect and retry transient failures).
+# ---------------------------------------------------------------------------
+
+def _make_fake_anthropic_with_error(exc_class_name: str):
+    """Build a fake anthropic module whose messages.create raises exc_class_name."""
+    import sys
+    import types
+
+    class FakeRateLimitError(Exception):
+        pass
+
+    class FakeAPIError(Exception):
+        pass
+
+    exc = FakeRateLimitError if exc_class_name == "RateLimitError" else FakeAPIError
+
+    fake_client = MagicMock()
+    fake_client.messages.create.side_effect = exc("triggered in test")
+
+    mod = types.ModuleType("anthropic")
+    mod.Anthropic = MagicMock(return_value=fake_client)
+    mod.RateLimitError = FakeRateLimitError
+    mod.APIError = FakeAPIError
+    sys.modules["anthropic"] = mod
+    return mod
+
+
+def _make_fake_openai_with_error(exc_class_name: str):
+    """Build a fake openai module whose chat.completions.create raises exc_class_name."""
+    import sys
+    import types
+
+    class FakeRateLimitError(Exception):
+        pass
+
+    class FakeAPIError(Exception):
+        pass
+
+    exc = FakeRateLimitError if exc_class_name == "RateLimitError" else FakeAPIError
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = exc("triggered in test")
+
+    mod = types.ModuleType("openai")
+    mod.OpenAI = MagicMock(return_value=fake_client)
+    mod.RateLimitError = FakeRateLimitError
+    mod.APIError = FakeAPIError
+    sys.modules["openai"] = mod
+    return mod
+
+
+def test_call_anthropic_rate_limit_error_becomes_runtime_error(monkeypatch):
+    """anthropic.RateLimitError from messages.create must be caught and re-raised as RuntimeError."""
+    import sys
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _make_fake_anthropic_with_error("RateLimitError")
+    try:
+        with pytest.raises(RuntimeError, match="rate limit"):
+            content._call_anthropic("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("anthropic", None)
+
+
+def test_call_anthropic_api_error_becomes_runtime_error(monkeypatch):
+    """anthropic.APIError from messages.create must be caught and re-raised as RuntimeError."""
+    import sys
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _make_fake_anthropic_with_error("APIError")
+    try:
+        with pytest.raises(RuntimeError, match="Anthropic API error"):
+            content._call_anthropic("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("anthropic", None)
+
+
+def test_call_openai_rate_limit_error_becomes_runtime_error(monkeypatch):
+    """openai.RateLimitError from chat.completions.create must be caught and re-raised as RuntimeError."""
+    import sys
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _make_fake_openai_with_error("RateLimitError")
+    try:
+        with pytest.raises(RuntimeError, match="rate limit"):
+            content._call_openai("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("openai", None)
+
+
+def test_call_openai_api_error_becomes_runtime_error(monkeypatch):
+    """openai.APIError from chat.completions.create must be caught and re-raised as RuntimeError."""
+    import sys
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _make_fake_openai_with_error("APIError")
+    try:
+        with pytest.raises(RuntimeError, match="OpenAI API error"):
+            content._call_openai("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("openai", None)
