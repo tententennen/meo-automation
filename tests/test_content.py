@@ -585,3 +585,95 @@ def test_call_openai_api_error_becomes_runtime_error(monkeypatch):
             content._call_openai("prompt", {"max_retries": 1})
     finally:
         sys.modules.pop("openai", None)
+
+
+# ---------------------------------------------------------------------------
+# _call_llm — provider dispatch
+# ---------------------------------------------------------------------------
+
+def test_call_llm_anthropic_provider():
+    """Anthropic branch of _call_llm routes to _call_anthropic and returns its result."""
+    import sys, os
+
+    fake_msg = MagicMock()
+    fake_msg.content = [MagicMock(text="Anthropic生成テキスト")]
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_msg
+
+    fake_anthropic = _make_fake_anthropic(fake_client)
+    sys.modules["anthropic"] = fake_anthropic
+    os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+
+    try:
+        result = content._call_llm("テスト", {"provider": "anthropic", "model_id": "claude-haiku-4-5-20251001"})
+        assert result == "Anthropic生成テキスト"
+    finally:
+        sys.modules.pop("anthropic", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+
+
+# ---------------------------------------------------------------------------
+# Missing API key error paths
+# ---------------------------------------------------------------------------
+
+def test_call_anthropic_raises_environment_error_when_api_key_missing(monkeypatch):
+    """_call_anthropic must raise EnvironmentError immediately when ANTHROPIC_API_KEY is unset."""
+    import sys, types
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    fake_anthropic = types.ModuleType("anthropic")
+    fake_anthropic.Anthropic = MagicMock()
+    fake_anthropic.RateLimitError = Exception
+    fake_anthropic.APIError = Exception
+    sys.modules["anthropic"] = fake_anthropic
+
+    try:
+        with pytest.raises(EnvironmentError, match="ANTHROPIC_API_KEY"):
+            content._call_anthropic("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("anthropic", None)
+
+
+def test_call_openai_raises_environment_error_when_api_key_missing(monkeypatch):
+    """_call_openai must raise EnvironmentError immediately when OPENAI_API_KEY is unset."""
+    import sys, types
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    fake_openai = types.ModuleType("openai")
+    fake_openai.OpenAI = MagicMock()
+    fake_openai.RateLimitError = Exception
+    fake_openai.APIError = Exception
+    sys.modules["openai"] = fake_openai
+
+    try:
+        with pytest.raises(EnvironmentError, match="OPENAI_API_KEY"):
+            content._call_openai("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("openai", None)
+
+
+def test_call_openai_includes_system_message_when_system_given(monkeypatch):
+    """When system= is provided to _call_openai, it must appear first in the messages list."""
+    import sys, types
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    fake_response = MagicMock()
+    fake_response.choices = [MagicMock()]
+    fake_response.choices[0].message.content = "返信テキスト"
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+
+    fake_openai = types.ModuleType("openai")
+    fake_openai.OpenAI = MagicMock(return_value=fake_client)
+    fake_openai.RateLimitError = Exception
+    fake_openai.APIError = Exception
+    sys.modules["openai"] = fake_openai
+
+    try:
+        content._call_openai("ユーザープロンプト", {}, system="あなたは日本語アシスタントです")
+        messages = fake_client.chat.completions.create.call_args.kwargs["messages"]
+        assert messages[0] == {"role": "system", "content": "あなたは日本語アシスタントです"}
+        assert messages[1]["role"] == "user"
+    finally:
+        sys.modules.pop("openai", None)

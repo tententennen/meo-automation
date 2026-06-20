@@ -70,3 +70,17 @@ def test_effective_defaults_does_not_mutate_global_config():
     cfg.effective_defaults(store)
     # Global default must be unchanged after the call
     assert cfg.content()["defaults"]["post_cadence_days"] == original_cadence
+
+
+def test_clear_cache_allows_fresh_reload():
+    """clear_cache() should invalidate the lru_cache so subsequent calls re-read config."""
+    # Prime the cache
+    stores_before = cfg.stores()
+    content_before = cfg.content()
+    # Clear — should not raise
+    cfg.clear_cache()
+    # After clearing, stores() and content() should still return valid data
+    stores_after = cfg.stores()
+    content_after = cfg.content()
+    assert set(stores_after.keys()) == set(stores_before.keys())
+    assert content_after["defaults"] == content_before["defaults"]

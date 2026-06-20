@@ -208,6 +208,37 @@ def test_validate_content_missing_industry_tones():
     assert any("industry_tones" in e for e in errors)
 
 
+def test_validate_content_missing_field_within_defaults():
+    """When defaults is present as a dict but a required field is absent, report it."""
+    content = {
+        **_VALID_CONTENT,
+        "defaults": {"language": "ja"},  # post_cadence_days / max_post_chars / max_reply_chars absent
+    }
+    errors = v.validate_content(content)
+    assert any("defaults.post_cadence_days is missing" in e for e in errors)
+    assert any("defaults.max_post_chars is missing" in e for e in errors)
+
+
+def test_validate_content_missing_llm_provider_field():
+    """When llm section exists but provider key is absent, report it."""
+    content = {
+        **_VALID_CONTENT,
+        "llm": {"model_id": "claude-haiku-4-5-20251001"},  # provider absent
+    }
+    errors = v.validate_content(content)
+    assert any("llm.provider is missing" in e for e in errors)
+
+
+def test_validate_content_missing_llm_model_id_field():
+    """When llm section exists but model_id key is absent, report it."""
+    content = {
+        **_VALID_CONTENT,
+        "llm": {"provider": "anthropic"},  # model_id absent
+    }
+    errors = v.validate_content(content)
+    assert any("llm.model_id is missing" in e for e in errors)
+
+
 # ---------------------------------------------------------------------------
 # validate_all
 # ---------------------------------------------------------------------------

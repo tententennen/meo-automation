@@ -63,6 +63,21 @@ def test_create_local_post_omits_media_field_when_no_url(client, mock_session):
     assert "media" not in body
 
 
+def test_create_local_post_includes_call_to_action_when_given(client, mock_session):
+    mock_session.post.return_value = _ok({"name": f"{_LOC}/localPosts/5"})
+    cta = {"actionType": "BOOK", "url": "https://example.com/book"}
+    client.create_local_post(_LOC, "予約はこちら", call_to_action=cta)
+    body = mock_session.post.call_args.kwargs["json"]
+    assert body["callToAction"] == cta
+
+
+def test_create_local_post_omits_call_to_action_when_none(client, mock_session):
+    mock_session.post.return_value = _ok({"name": f"{_LOC}/localPosts/6"})
+    client.create_local_post(_LOC, "CTAなし投稿", call_to_action=None)
+    body = mock_session.post.call_args.kwargs["json"]
+    assert "callToAction" not in body
+
+
 # ---------------------------------------------------------------------------
 # upload_media_bytes
 # ---------------------------------------------------------------------------
@@ -226,3 +241,30 @@ def test_retry_config_includes_put():
     assert "PUT" in allowed
     assert "GET" in allowed
     assert "POST" not in allowed  # POST is not idempotent — must never be auto-retried
+
+
+# ---------------------------------------------------------------------------
+# _refresh_if_needed — credential expiry handling
+# ---------------------------------------------------------------------------
+
+def test_refresh_if_needed_does_nothing_when_creds_valid():
+    """When credentials are still valid, no refresh call is made."""
+    creds = MagicMock()
+    creds.valid = True
+    creds.token = "tok"
+    session = _AuthSession(creds)
+    session._refresh_if_needed()
+    creds.refresh.assert_not_called()
+
+
+def test_refresh_if_needed_refreshes_when_creds_invalid():
+    """When credentials have expired, refresh() is called with a Request object."""
+    creds = MagicMock()
+    creds.valid = False
+    creds.token = "tok"
+    session = _AuthSession(creds)
+    with patch("google.auth.transport.requests.Request") as mock_request_cls:
+        mock_req = MagicMock()
+        mock_request_cls.return_value = mock_req
+        session._refresh_if_needed()
+    creds.refresh.assert_called_once_with(mock_req)

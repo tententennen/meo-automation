@@ -371,3 +371,11 @@ def test_per_store_cadence_override_passed_to_should_post_today():
 
     # should_post_today must be called with cadence_days=3 (not the global default of 1)
     mock_should.assert_called_once_with(store_with_override["key"], 3)
+
+
+def test_pick_theme_returns_none_when_themes_list_is_empty():
+    """_pick_theme returns None when the store's configured theme list is empty."""
+    from meo.posts import _pick_theme
+    with patch("meo.posts.get_recent_themes", return_value=[]):
+        result = _pick_theme("the_body_kyoto", [])
+    assert result is None

@@ -300,3 +300,27 @@ def test_reviews_exception_is_caught_and_causes_exit_1():
             main()
 
     assert exc.value.code == 1
+
+
+def test_reviews_result_with_errors_key_causes_exit_1():
+    """run_reviews_for_store returning a result dict that contains errors must cause exit 1."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "dry_run", "post_text": "テスト"}
+
+    def reviews_with_errors(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "errors": ["GBP returned 500"]}
+
+    with patch("sys.argv", ["meo", "--dry-run"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=reviews_with_errors):
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+    assert exc.value.code == 1

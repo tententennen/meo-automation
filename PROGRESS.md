@@ -1,6 +1,127 @@
 # PROGRESS
 
-## Status: All milestones complete — 362/362 tests green (96% coverage)
+## Status: All milestones complete — 387/387 tests green (97% coverage)
+
+---
+
+## Completed this run (run 28)
+
+### Tests: closed remaining actionable coverage gaps across 6 modules (96% → 97%)
+
+**Problem**: Several modules had meaningful untested code paths that could regress silently:
+
+| Module | Previous coverage | Gaps closed |
+|---|---|---|
+| `src/meo/auth.py` | 33% | `get_credentials()` and `_require_env()` had zero test coverage |
+| `src/meo/business_profile.py` | 97% | `_refresh_if_needed()` expired-credentials path; `call_to_action` body field |
+| `src/meo/config.py` | 93% | `clear_cache()` body never called directly in tests |
+| `src/meo/content.py` | 96% | Anthropic dispatch branch; missing-API-key EnvironmentError for both providers; OpenAI system-message insertion |
+| `src/meo/main.py` | 96% | `had_error = True` when `run_reviews_for_store` returns result with `errors` key |
+| `src/meo/posts.py` | 99% | `_pick_theme` early-return when themes list is empty |
+| `src/meo/validator.py` | 96% | Missing-field errors within present `defaults`/`llm` sections (vs. missing section entirely) |
+
+**Fix**: +25 new tests across 7 test files.
+
+**`tests/test_auth.py` (new file) — 10 tests:**
+
+| Test | What it covers |
+|---|---|
+| `test_require_env_returns_value_when_set` | Returns value when env var is set |
+| `test_require_env_raises_when_missing` | Raises `EnvironmentError` with var name when absent |
+| `test_require_env_raises_when_empty_string` | Empty string treated same as absent |
+| `test_get_credentials_raises_when_client_id_missing` | Missing `GOOGLE_CLIENT_ID` → EnvironmentError |
+| `test_get_credentials_raises_when_client_secret_missing` | Missing `GOOGLE_CLIENT_SECRET` → EnvironmentError |
+| `test_get_credentials_raises_when_refresh_token_missing` | Missing `GOOGLE_REFRESH_TOKEN` → EnvironmentError |
+| `test_get_credentials_returns_credentials_object` | Returns the `Credentials` instance |
+| `test_get_credentials_builds_credentials_with_env_values` | Env var values wired into `Credentials` kwargs |
+| `test_get_credentials_calls_refresh` | `creds.refresh(Request())` called exactly once |
+| `test_get_credentials_includes_both_scopes` | Both `business.manage` and `drive.readonly` in scopes |
+
+**`tests/test_business_profile.py` — 4 tests:**
+
+| Test | What it covers |
+|---|---|
+| `test_refresh_if_needed_does_nothing_when_creds_valid` | No refresh when `creds.valid = True` |
+| `test_refresh_if_needed_refreshes_when_creds_invalid` | `creds.refresh()` called when `creds.valid = False` |
+| `test_create_local_post_includes_call_to_action_when_given` | `callToAction` body field set when CTA provided |
+| `test_create_local_post_omits_call_to_action_when_none` | `callToAction` absent when `call_to_action=None` |
+
+**`tests/test_config.py` — 1 test:**
+
+| Test | What it covers |
+|---|---|
+| `test_clear_cache_allows_fresh_reload` | Calls `_stores_cached.cache_clear()` and `_content_cached.cache_clear()` |
+
+**`tests/test_content.py` — 4 tests:**
+
+| Test | What it covers |
+|---|---|
+| `test_call_llm_anthropic_provider` | Dispatch to `_call_anthropic` when provider is `"anthropic"` |
+| `test_call_anthropic_raises_environment_error_when_api_key_missing` | `ANTHROPIC_API_KEY` absent → EnvironmentError |
+| `test_call_openai_raises_environment_error_when_api_key_missing` | `OPENAI_API_KEY` absent → EnvironmentError |
+| `test_call_openai_includes_system_message_when_system_given` | System string → `{"role": "system", ...}` prepended to messages |
+
+**`tests/test_main.py` — 1 test:**
+
+| Test | What it covers |
+|---|---|
+| `test_reviews_result_with_errors_key_causes_exit_1` | Reviews returning `{"errors": [...]}` sets `had_error=True` → exit 1 |
+
+**`tests/test_posts.py` — 1 test:**
+
+| Test | What it covers |
+|---|---|
+| `test_pick_theme_returns_none_when_themes_list_is_empty` | `_pick_theme` returns `None` when themes list is `[]` |
+
+**`tests/test_report.py` — 1 test:**
+
+| Test | What it covers |
+|---|---|
+| `test_main_output_flag_error_exits_1` | `OSError` writing output file → exit 1 + stderr message |
+
+**`tests/test_validator.py` — 3 tests:**
+
+| Test | What it covers |
+|---|---|
+| `test_validate_content_missing_field_within_defaults` | `defaults` present but missing `post_cadence_days` / `max_post_chars` → per-field error |
+| `test_validate_content_missing_llm_provider_field` | `llm` present but `provider` absent → error |
+| `test_validate_content_missing_llm_model_id_field` | `llm` present but `model_id` absent → error |
+
+**Coverage change:**
+
+| Module | Before | After |
+|---|---|---|
+| `auth.py` | 33% | 70% |
+| `business_profile.py` | 97% | 100% |
+| `config.py` | 93% | 100% |
+| `content.py` | 96% | 99% |
+| `main.py` | 96% | 97% |
+| `posts.py` | 99% | 100% |
+| `validator.py` | 96% | 100% |
+| **Total** | **96%** | **97%** |
+
+The remaining 39 uncovered lines (3%) are the structural ceiling — exclusively:
+- `try: from dotenv import load_dotenv; load_dotenv()` blocks in every CLI module (only reached when `python-dotenv` is installed; untestable in unit context)
+- `if __name__ == "__main__":` guards across all CLI modules (untestable in unit context)
+- `raise RuntimeError("retry loop exited without return or raise")` in `content.py` — explicitly annotated as an unreachable guard
+- `auth.py` lines 65–81: the interactive `InstalledAppFlow` browser-launch block (only runs when `python -m meo.auth` is invoked directly)
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `tests/test_auth.py` | New: 10 tests for `get_credentials()` and `_require_env()` |
+| `tests/test_business_profile.py` | +4 tests: `_refresh_if_needed` expired path; `call_to_action` body field |
+| `tests/test_config.py` | +1 test: `clear_cache()` directly called |
+| `tests/test_content.py` | +4 tests: anthropic dispatch; missing-API-key paths; OpenAI system message |
+| `tests/test_main.py` | +1 test: reviews-result-with-errors → exit 1 |
+| `tests/test_posts.py` | +1 test: `_pick_theme` returns None on empty list |
+| `tests/test_report.py` | +1 test: OSError when writing output file |
+| `tests/test_validator.py` | +3 tests: per-field errors within present `defaults`/`llm` sections |
+
+### New tests (+25 tests)
+
+Total: **387/387 tests** (was 362).
 
 ---
 

@@ -129,3 +129,15 @@ def test_main_output_flag_saves_file(tmp_path):
     assert out_file.exists()
     content = out_file.read_text(encoding="utf-8")
     assert "MEO Automation" in content
+
+
+def test_main_output_flag_error_exits_1(tmp_path, capsys):
+    """When writing the output file raises OSError, main() should exit 1 and print to stderr."""
+    bad_path = str(tmp_path / "nonexistent_dir" / "report.txt")
+    post_p, reply_p = _patch_history()
+    with patch("sys.argv", ["meo-report", "--output", bad_path]), post_p, reply_p:
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "Error saving report" in err
