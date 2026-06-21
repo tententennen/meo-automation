@@ -1,6 +1,58 @@
 # PROGRESS
 
-## Status: All milestones complete — 387/387 tests green (97% coverage)
+## Status: All milestones complete — 390/390 tests green (98% coverage)
+
+---
+
+## Completed this run (run 29)
+
+### Tests: closed 3 remaining testable coverage gaps (97% → 98%)
+
+The 39 uncovered lines reported after run 28 were claimed to be the structural
+ceiling.  On inspection, 3 of them were actually reachable by tests — they were
+real branches in `main()` functions that the existing tests only exercised via
+the library-level helper (not the CLI entrypoint).
+
+| File | Line | What was missing |
+|---|---|---|
+| `src/meo/tools/health.py` | 138 | `check_sym = _WARN` — the `!` warning symbol path for `drive_folder_id="TODO"` in `main()`; existing test only called `run_health()`, never `main()` |
+| `src/meo/tools/preview.py` | 89 | `lines.append(f"ERROR: {r.get('reply_error', ...')}")` — the reply-error branch in `_format_output()`; existing test had `post_error` but still provided `reply`, so the else-branch on the reply side was never taken |
+| `src/meo/tools/reset.py` | 159 | `print(f"  – {label}: nothing to clear")` — the per-section "nothing to clear" line in `main()`; reached only when `any_cleared` is True (at least one section had data) but a specific section had none; existing test only exercised the all-empty early-exit path |
+
+**New tests (+3 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_health.py` | `test_main_shows_warn_symbol_for_unconfigured_drive_folder_id` | `main()` with a TODO `drive_folder_id` store → `!` symbol in output, exits 0 (warning, not fatal) |
+| `tests/test_preview.py` | `test_format_output_marks_reply_error` | `_format_output` with `reply_error` key (no `reply`) → `"ERROR: Rate limit"` in output |
+| `tests/test_reset.py` | `test_main_partial_clear_shows_dash_for_sections_with_nothing_to_clear` | State with only `last_post` data + `meo-reset all` → "Reset complete" printed with "nothing to clear" for the empty sections |
+
+**Coverage change:**
+
+| Module | Before | After |
+|---|---|---|
+| `health.py` | 96% | 97% |
+| `preview.py` | 94% | 96% |
+| `reset.py` | 93% | 94% |
+| **Total** | **97%** | **98%** |
+
+The remaining 36 uncovered lines (2%) are the true structural ceiling:
+- `try: from dotenv import load_dotenv; load_dotenv()` blocks in every CLI module
+- `if __name__ == "__main__":` guards across all CLI modules
+- `raise RuntimeError("retry loop exited without return or raise")` in `content.py:246` (explicitly annotated unreachable guard)
+- `auth.py:65-81`: the interactive `InstalledAppFlow` browser-launch block
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `tests/test_health.py` | +1 test: `main()` warn-symbol path for unconfigured drive_folder_id |
+| `tests/test_preview.py` | +1 test: `_format_output()` reply-error branch |
+| `tests/test_reset.py` | +1 test: partial-clear "nothing to clear" per-section output |
+
+### New tests (+3 tests)
+
+Total: **390/390 tests** (was 387).
 
 ---
 
@@ -2028,7 +2080,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (362/362, 96% coverage).
+All code is complete and the test suite is green (390/390, 98% coverage).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:

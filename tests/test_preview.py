@@ -93,6 +93,14 @@ def test_format_output_marks_errors():
     assert "API key missing" in out
 
 
+def test_format_output_marks_reply_error():
+    """_format_output() renders reply_error (no 'reply' key) as ERROR line."""
+    results = [{"store_key": "k", "name": "テスト店", "post": "投稿文", "reply_error": "Rate limit"}]
+    out = _format_output(results)
+    assert "ERROR" in out
+    assert "Rate limit" in out
+
+
 def test_format_output_contains_timestamp():
     results = [{"store_key": "k", "name": "N", "post": "P", "reply": "R"}]
     out = _format_output(results)

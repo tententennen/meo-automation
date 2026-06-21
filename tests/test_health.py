@@ -155,3 +155,19 @@ def test_main_exits_1_on_unknown_store_key(capsys):
     assert exc.value.code == 1
     out = capsys.readouterr().out
     assert "Unknown store key" in out
+
+
+def test_main_shows_warn_symbol_for_unconfigured_drive_folder_id(monkeypatch, capsys):
+    """main() prints the ! warn symbol for drive_folder_id='TODO', exits 0 (warning, not fatal)."""
+    todo_store = dict(_STORE, drive_folder_id="TODO: Google Drive folder ID")
+    monkeypatch.setattr("meo.tools.health.cfg.store_list", lambda: [todo_store])
+    with patch("meo.tools.health.get_credentials", return_value=MagicMock()), \
+         patch("meo.tools.health.BusinessProfileClient") as mock_gbp, \
+         patch("meo.tools.health.DriveClient"), \
+         patch("sys.argv", ["meo-health"]):
+        mock_gbp.return_value.list_reviews.return_value = []
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "!" in out  # _WARN symbol for the unconfigured drive_folder_id check

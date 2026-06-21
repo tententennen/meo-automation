@@ -211,3 +211,20 @@ def test_main_nothing_to_clear_prints_message_and_exits_0(patch_state_file, caps
             main()
     assert exc.value.code == 0
     assert "Nothing to clear" in capsys.readouterr().out
+
+
+def test_main_partial_clear_shows_dash_for_sections_with_nothing_to_clear(patch_state_file, capsys):
+    """When only some sections have data, sections with no data print '– nothing to clear'."""
+    # Write state with only last_post — no images, themes, replied_reviews, or held_reviews
+    patch_state_file.write_text(json.dumps({
+        "last_post": {"the_body_kyoto": "2024-06-15"}
+    }))
+    with pytest.raises(SystemExit) as exc:
+        with patch("sys.argv", ["meo-reset", "all"]):
+            main()
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    # The post_guard was cleared, so we get section-by-section output (not the early-exit message)
+    assert "Reset complete" in out
+    # Sections with no data print the dash line
+    assert "nothing to clear" in out
