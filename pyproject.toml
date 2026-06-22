@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Fully-automated Google Business Profile (MEO) tool for THE BODY / MYBEAR STUDIO"
 requires-python = ">=3.11"
 dependencies = [
+    "cffi>=1.15.0",
     "google-auth>=2.28.0",
     "google-auth-oauthlib>=1.2.0",
     "google-api-python-client>=2.120.0",

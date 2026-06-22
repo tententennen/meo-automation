@@ -59,7 +59,13 @@ jobs:
             meo-state-
 
       - name: Install dependencies
-        run: pip install -e .
+        # Install cffi first so the Rust cryptography extension (via google-auth)
+        # initialises correctly on ubuntu-latest.  cffi is now a declared dep in
+        # pyproject.toml but pip resolves it last by default, so we pin it first.
+        run: pip install cffi && pip install -e .
+
+      - name: Validate config structure
+        run: python -m meo.tools.validate --no-env
 
       - name: Run MEO automation
         env:

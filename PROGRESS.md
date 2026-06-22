@@ -4,6 +4,70 @@
 
 ---
 
+## Completed this run (run 30)
+
+### Fix: production daily runner had two silent failure modes
+
+#### 1. Missing `cffi` install in `daily_run.yml`
+
+**Problem**: The CI workflow (`ci.yml`) installs `cffi` before the main
+dependencies with the comment: _"cffi must be installed first because the
+system-provided cryptography package (which google-auth depends on) has a
+Rust-extension that fails without it on the ubuntu-latest runner."_
+
+The daily runner (`daily_run.yml`) only ran `pip install -e .`, without the
+`cffi` pre-install.  On any ubuntu-latest runner that has the system-level
+`cryptography` package, `google.oauth2` would fail with:
+
+```
+pyo3_runtime.PanicException: Python API call failed
+ModuleNotFoundError: No module named '_cffi_backend'
+```
+
+This would cause every scheduled run to fail immediately, with no useful error
+in the log — only a cryptic PanicException from Rust code.
+
+**Fix**:
+- `daily_run.yml`: added `pip install cffi &&` before the main install (same
+  pattern as `ci.yml`).
+- `pyproject.toml`: added `cffi>=1.15.0` to `dependencies` so the requirement
+  is declared in the package metadata and visible to `pip`.
+- `requirements.txt`: added `cffi>=1.15.0` with an explanatory comment.
+
+#### 2. No config validation before the live run in `daily_run.yml`
+
+**Problem**: CI validates config structure (`meo-validate --no-env`) on every
+push, so YAML typos are caught before merge.  But the daily runner had no such
+step.  A config typo introduced after the last CI run (e.g. directly editing
+`config/content.yaml` on the repo web UI) would only be discovered mid-run
+after Google Auth already succeeded — with a Python `KeyError` or YAML error
+buried deep in the log, and no clear message about which config key was wrong.
+
+**Fix**: Added a `Validate config structure` step to `daily_run.yml` between
+`Install dependencies` and `Run MEO automation`:
+
+```yaml
+- name: Validate config structure
+  run: python -m meo.tools.validate --no-env
+```
+
+If `config/stores.yaml` or `config/content.yaml` has a structural error, the
+run fails immediately at this step with a clear `✗` error list from
+`meo-validate`, and none of the credentials or API quota are touched.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `.github/workflows/daily_run.yml` | `pip install cffi` before main install; added `Validate config structure` step |
+| `pyproject.toml` | `cffi>=1.15.0` added to `dependencies` |
+| `requirements.txt` | `cffi>=1.15.0` added with comment |
+
+**Tests:** no new tests — both changes are workflow/config file fixes. All
+390/390 existing tests pass unchanged.
+
+---
+
 ## Completed this run (run 29)
 
 ### Tests: closed 3 remaining testable coverage gaps (97% → 98%)
