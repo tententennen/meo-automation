@@ -4,6 +4,102 @@
 
 ---
 
+## Completed this run (run 31)
+
+### Fix: daily run emits "failure" every day while awaiting credential setup
+
+**Problem**: The four required GitHub Actions secrets (`GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `ANTHROPIC_API_KEY`) have not
+yet been added to the repository.  The tool correctly exits 1 at the
+config-validation step, causing the scheduled run to report "failure" every day
+— confirmed in run logs (job 82633128178, 2026-06-22):
+
+```
+GOOGLE_CLIENT_ID:      (empty)
+GOOGLE_CLIENT_SECRET:  (empty)
+GOOGLE_REFRESH_TOKEN:  (empty)
+ANTHROPIC_API_KEY:     (empty)
+...
+ERROR: Missing required env var: GOOGLE_CLIENT_ID
+CRITICAL: 4 configuration error(s) found.
+Process completed with exit code 1.
+```
+
+This has created daily noise for 4 consecutive scheduled runs since run 30.
+
+**Fix**: Added an early-exit guard at the top of the "Run MEO automation" step.
+When **all four** required secrets are empty — indicating the tool has never been
+configured — the step exits 0 with a GitHub Actions `::notice::` annotation
+instead of running `meo.main` and failing.
+
+```bash
+if [ -z "$GOOGLE_CLIENT_ID" ] && \
+   [ -z "$GOOGLE_CLIENT_SECRET" ] && \
+   [ -z "$GOOGLE_REFRESH_TOKEN" ] && \
+   [ -z "$ANTHROPIC_API_KEY" ]; then
+  echo "::notice::Credentials not yet configured. ..."
+  exit 0
+fi
+```
+
+The "all four empty" condition is strict so partial misconfiguration still fails
+with the full error list.  Once the owner adds even one credential the guard
+falls through and the tool runs normally.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `.github/workflows/daily_run.yml` | Early-exit guard added before `ARGS=""` in "Run MEO automation" step |
+
+**Tests:** no new tests — workflow-only change; 390/390 pass unchanged.
+
+---
+
+## Needs human action — credential setup (unchanged from prior runs)
+
+The tool is code-complete and test-complete.  The only remaining steps are
+one-time owner actions:
+
+1. **Google Cloud project** — create a project at
+   <https://console.cloud.google.com/> and note the project ID.
+
+2. **Enable APIs** — in the project, enable:
+   - "Google My Business API" (or "Business Profile API")
+   - "Google Drive API"
+
+3. **OAuth 2.0 client** — create an OAuth client ID (type: Desktop app).
+   Download the `credentials.json`.
+
+4. **Business Profile API access** — fill in the access form at
+   <https://developers.google.com/my-business/content/prereqs> (approval can
+   take a few days).
+
+5. **Combined scopes refresh token** — run locally:
+   ```bash
+   pip install -e .
+   python -m meo.auth
+   ```
+   This opens a browser, prompts you to authorise **both** scopes
+   (`business.manage` + `drive.readonly`), and prints the refresh token.
+
+6. **Add GitHub Actions secrets** — in the repository, go to
+   Settings → Secrets and variables → Actions → New repository secret:
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+   - `GOOGLE_REFRESH_TOKEN`
+   - `ANTHROPIC_API_KEY` (get at <https://console.anthropic.com/>)
+   - `SLACK_WEBHOOK_URL` *(optional — Slack run-summary notifications)*
+
+7. **Fill in `config/stores.yaml`** — replace the `TODO` placeholders for
+   `location_id` and `drive_folder_id`.  Use `python -m meo.tools.discover_locations`
+   to find your location IDs once the Business Profile API is approved.
+
+Once secrets are added, the next scheduled run (0:00 UTC / 9:00 JST) will
+activate automatically.
+
+---
+
 ## Completed this run (run 30)
 
 ### Fix: production daily runner had two silent failure modes

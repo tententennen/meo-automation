@@ -75,6 +75,18 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
+          # If ALL required credentials are still empty the tool has never been
+          # configured.  Exit 0 with a notice instead of failing every day while
+          # the owner works through the setup steps.  Once even one credential is
+          # added this check falls through and the tool runs (and gives a clear
+          # error for any still-missing ones).
+          if [ -z "$GOOGLE_CLIENT_ID" ] && \
+             [ -z "$GOOGLE_CLIENT_SECRET" ] && \
+             [ -z "$GOOGLE_REFRESH_TOKEN" ] && \
+             [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::Credentials not yet configured. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN, and ANTHROPIC_API_KEY to repository secrets to activate the daily run. See README.md for setup instructions."
+            exit 0
+          fi
           ARGS=""
           # scheduled runs are always live; workflow_dispatch respects inputs
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
