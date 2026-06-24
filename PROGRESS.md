@@ -4,6 +4,52 @@
 
 ---
 
+## Completed this run (run 32)
+
+### Refactor: reduce `state.py` from 473 lines to 366 lines (below the 400-line module cap)
+
+**Problem**: `state.py` was 473 lines — 18% over the 400-line "small focused module"
+constraint declared in the project guidelines.
+
+The overage came from two repeated patterns:
+
+1. **Five identical `clear_*` functions** (lines 342–473, ~132 lines): each loaded
+   state, popped one or all keys from a named section, and saved — differing only
+   in the section name string.
+
+2. **Three identical rotation `record_*` functions** (`record_image`, `record_theme`,
+   `record_replied_review`): each loaded state, removed the item if already present,
+   prepended it, capped the list, and saved — differing only in section name and
+   capacity constant.
+
+**Fix**: Extracted two private helpers that capture the shared pattern:
+
+```python
+def _record_rotation(section_name, store_key, item, capacity):
+    """Prepend item to a rotation list, capped at capacity (no duplicates)."""
+    ...
+
+def _clear_section(section_name, store_key):
+    """Clear one or all entries in a top-level state section."""
+    ...
+```
+
+All 8 public functions (`record_image`, `record_theme`, `record_replied_review`,
+`clear_post_guard`, `clear_image_history`, `clear_theme_history`,
+`clear_replied_reviews`, `clear_held_reviews`) now delegate to these helpers.
+
+**API surface is unchanged** — no callers or tests required modification.
+
+**Line count:**
+
+| Before | After | Saved |
+|---|---|---|
+| 473 lines | 366 lines | 107 lines (−23%) |
+
+**Tests:** 390/390 pass unchanged.
+
+---
+
 ## Completed this run (run 31)
 
 ### Fix: daily run emits "failure" every day while awaiting credential setup
