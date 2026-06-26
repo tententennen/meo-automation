@@ -4,6 +4,87 @@
 
 ---
 
+## Completed this run (run 33)
+
+### Security: harden GitHub Actions workflows against shell injection and over-privileged tokens
+
+Three small hardening changes to `.github/workflows/daily_run.yml` and
+`.github/workflows/ci.yml`, following GitHub's own security-hardening guide:
+
+#### 1. Shell injection fix for `inputs.store` (`daily_run.yml`)
+
+**Problem**: The `store` workflow_dispatch input is free-text (no `type: choice`
+constraint).  It was previously interpolated directly into the shell script via
+`${{ inputs.store }}` before the shell saw the script:
+
+```bash
+[ -n "${{ inputs.store }}" ] && ARGS="$ARGS --store ${{ inputs.store }}"
+```
+
+If `inputs.store` contained shell-special characters such as `"` (double-quote),
+the injected text could break out of the surrounding quotes and be interpreted as
+shell commands.  For example, `inputs.store = '"` would produce:
+
+```bash
+ARGS="$ARGS --store "
+```
+
+...which leaves a dangling unmatched quote, causing a syntax error or worse.
+
+GitHub's recommended fix for user-controlled inputs is to pass them through the
+`env:` block, where GitHub escapes the value and the shell sees it as a variable
+rather than as inline text.
+
+**Fix**: Moved `inputs.store` to `env: MEO_STORE_INPUT: ${{ inputs.store }}` and
+changed the script to reference `$MEO_STORE_INPUT`.  Added a comment citing the
+GitHub security guide for future maintainers.
+
+The choice inputs (`dry_run`, `skip_posts`, `skip_reviews`, `force`) are safe as
+direct interpolation because GitHub validates them to "true"/"false" before the
+script runs.  Only the free-text `store` input needed this treatment.
+
+#### 2. Least-privilege `permissions:` block (`daily_run.yml`, `ci.yml`)
+
+**Problem**: Without an explicit `permissions:` block, both workflows inherited
+the repository's default token permissions — likely `contents: write` and
+`pull-requests: write`.  Neither workflow writes to the repo or manages PRs/issues,
+so the extra scopes were unnecessary attack surface: a compromised third-party
+action or a supply-chain incident could abuse those permissions.
+
+**Fix**: Added explicit `permissions:` blocks to both jobs:
+
+```yaml
+permissions:
+  contents: read   # checkout only — no push, no PR creation
+  actions: write   # required for cache save/restore and upload-artifact
+```
+
+`actions: write` is the minimum needed for `actions/cache/restore`,
+`actions/cache/save`, and `actions/upload-artifact`.  All other permission scopes
+are implicitly denied.
+
+#### 3. `if-no-files-found: ignore` for upload-artifact (`daily_run.yml`)
+
+**Problem**: When the daily runner exits early (no credentials configured), the
+Python script never runs, so `logs/meo.log` is never created.  The
+`upload-artifact` action defaults to `if-no-files-found: warn`, which emits a
+yellow warning in the Actions log on every unconfigured run — misleading noise
+that suggested something went wrong.
+
+**Fix**: Added `if-no-files-found: ignore` to suppress the warning.  The artifact
+step still runs (`if: always()`) and is a no-op when the log doesn't exist.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `.github/workflows/daily_run.yml` | `permissions:` block; `MEO_STORE_INPUT` env var; `if-no-files-found: ignore` |
+| `.github/workflows/ci.yml` | `permissions:` block |
+
+**Tests:** No new tests — workflow-only changes; all 390/390 pass unchanged.
+
+---
+
 ## Completed this run (run 32)
 
 ### Refactor: reduce `state.py` from 473 lines to 366 lines (below the 400-line module cap)

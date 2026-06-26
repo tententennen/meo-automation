@@ -38,6 +38,9 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -74,6 +77,10 @@ jobs:
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # Pass free-text input through env to prevent template-injection into
+          # the shell script (GitHub's recommended hardening for user-controlled
+          # inputs — see: docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections)
+          MEO_STORE_INPUT: ${{ inputs.store }}
         run: |
           # If ALL required credentials are still empty the tool has never been
           # configured.  Exit 0 with a notice instead of failing every day while
@@ -91,10 +98,11 @@ jobs:
           # scheduled runs are always live; workflow_dispatch respects inputs
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             [ "${{ inputs.dry_run }}" = "true" ]     && ARGS="$ARGS --dry-run"
-            [ "${{ inputs.skip_posts }}" = "true" ]   && ARGS="$ARGS --skip-posts"
+            [ "${{ inputs.skip_posts }}" = "true" ]  && ARGS="$ARGS --skip-posts"
             [ "${{ inputs.skip_reviews }}" = "true" ] && ARGS="$ARGS --skip-reviews"
-            [ "${{ inputs.force }}"        = "true" ]  && ARGS="$ARGS --force"
-            [ -n "${{ inputs.store }}" ]               && ARGS="$ARGS --store ${{ inputs.store }}"
+            [ "${{ inputs.force }}" = "true" ]        && ARGS="$ARGS --force"
+            # $MEO_STORE_INPUT is safe: passed via env, not interpolated into script
+            [ -n "$MEO_STORE_INPUT" ]                 && ARGS="$ARGS --store $MEO_STORE_INPUT"
           fi
           python -m meo.main $ARGS
 
@@ -116,3 +124,4 @@ jobs:
           name: meo-log-${{ github.run_id }}
           path: logs/meo.log
           retention-days: 30
+          if-no-files-found: ignore
