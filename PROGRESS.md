@@ -1,6 +1,71 @@
 # PROGRESS
 
-## Status: All milestones complete — 390/390 tests green (98% coverage)
+## Status: All milestones complete — 391/391 tests green (98% coverage)
+
+---
+
+## Completed this run (run 34)
+
+### Fix: held-review snapshot not cleared when `min_star_autoreply` reverts to 1
+
+**Problem**: `record_held_reviews()` was only called inside the `if min_star > 1`
+block in `reviews.py`.  When an operator previously ran with `min_star_autoreply: 3`
+(holding 1–2★ reviews for manual handling) and then changed the config back to
+`min_star_autoreply: 1` (reply to all reviews automatically), the old held-review
+snapshot remained in `state.json` indefinitely.
+
+`meo-export held-reviews` would continue showing those entries — which had already
+been processed — on every subsequent run, until the operator manually ran
+`meo-reset held-reviews`.
+
+**Fix**: Moved the `record_held_reviews()` call outside the `if min_star > 1` block
+so it always fires in live mode.  When `min_star == 1`, `manual == []` and the
+function is called with an empty list, clearing any stale snapshot automatically.
+
+The semantics are unchanged for `min_star > 1` — if reviews are below threshold
+the snapshot is updated; if all reviews pass the threshold an empty list is passed
+(same behavior as before, since the existing comment already said "Passing an empty
+list when manual==[] clears any stale snapshot").  Dry-run mode is unaffected
+(the `if not dry_run:` guard still wraps the call).
+
+### Fix: incomplete override templates in `config/stores.yaml`
+
+**Problem**: The commented-out `overrides:` templates in all three store entries
+were inconsistent:
+- `max_review_age_days` was missing from all three stores
+- `max_post_chars` and `max_reply_chars` were missing from `the_body_kyoto`
+  and `mybear_studio_kyoto`
+
+An operator consulting the template would not discover that these keys can be
+overridden per store — they'd have to read `validator.py` or the docs.
+
+**Fix**: All three `overrides:` templates now list all six allowed override keys
+with their global defaults noted in comments:
+
+| Key | Default |
+|---|---|
+| `post_cadence_days` | 1 |
+| `min_star_autoreply` | 1 |
+| `max_replies_per_run` | 10 |
+| `max_post_chars` | 1500 |
+| `max_reply_chars` | 4096 |
+| `max_review_age_days` | 90 |
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/reviews.py` | `record_held_reviews()` moved outside `if min_star > 1` block; updated comment |
+| `tests/test_reviews.py` | +1 test: `test_record_held_reviews_clears_stale_snapshot_when_min_star_is_1` |
+| `config/stores.yaml` | All three stores: complete 6-key override template with defaults |
+
+### New test (+1 test)
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_reviews.py` | `test_record_held_reviews_clears_stale_snapshot_when_min_star_is_1` | `min_star==1` live mode → `record_held_reviews(store_key, [])` called exactly once to clear stale snapshot |
+
+Total: **391/391 tests** (was 390).
 
 ---
 
