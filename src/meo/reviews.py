@@ -114,21 +114,24 @@ def run_reviews_for_store(
                     for r in manual
                 ],
             )
-        if not dry_run:
-            # Persist a snapshot so the operator can export held reviews via
-            # `meo-export held-reviews` without digging through log files.
-            # Passing an empty list when manual==[] clears any stale snapshot.
-            held_snapshots = [
-                {
-                    "review_id": _extract_review_id(r),
-                    "reviewer": r.get("reviewer", {}).get("displayName", ""),
-                    "stars": r.get("starRating", ""),
-                    "comment": r.get("comment", ""),
-                }
-                for r in manual
-            ]
-            record_held_reviews(store_key, held_snapshots)
         unreplied = auto_reply
+
+    # Always refresh the held-review snapshot in live mode.  Calling with an
+    # empty list when min_star==1 (or when no reviews are below threshold)
+    # clears any stale snapshot left over from a prior config where min_star>1.
+    # Without this, `meo-export held-reviews` would keep showing old entries
+    # even after the operator changed the config back to min_star_autoreply: 1.
+    if not dry_run:
+        held_snapshots = [
+            {
+                "review_id": _extract_review_id(r),
+                "reviewer": r.get("reviewer", {}).get("displayName", ""),
+                "stars": r.get("starRating", ""),
+                "comment": r.get("comment", ""),
+            }
+            for r in manual
+        ]
+        record_held_reviews(store_key, held_snapshots)
 
     replied = 0
     errors: list[str] = []

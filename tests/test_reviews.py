@@ -408,6 +408,23 @@ def test_record_held_reviews_called_with_empty_list_when_all_resolved():
     assert snapshots_arg == []
 
 
+def test_record_held_reviews_clears_stale_snapshot_when_min_star_is_1():
+    """When min_star==1 (reply to all), held-review snapshot must be cleared in live mode.
+
+    Without this, switching from min_star_autoreply: 3 back to 1 leaves stale
+    entries in state.json that persist across runs and appear in meo-export output.
+    """
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [_REVIEW_UNREPLIED]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf), \
+         patch("meo.reviews.record_held_reviews") as mock_held:
+        run_reviews_for_store(_STORE, gbp, dry_run=False)
+    mock_held.assert_called_once_with(_STORE["key"], [])
+
+
 # ---------------------------------------------------------------------------
 # _review_age_days helper
 # ---------------------------------------------------------------------------

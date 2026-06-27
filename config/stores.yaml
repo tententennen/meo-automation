@@ -22,12 +22,13 @@ stores:
     # call_to_action:
     #   action_type: "BOOK"
     #   url: ""   # e.g. https://yoursite.com/osaka/book
-    # overrides:                         # optional: shadow content.yaml defaults for this store only
-    #   post_cadence_days: 1             # post daily (default)
-    #   min_star_autoreply: 1            # auto-reply to all ratings (default; set to 3 to hold 1-2★)
-    #   max_replies_per_run: 10          # max review replies per run
-    #   max_post_chars: 1500             # max chars for generated post text
-    #   max_reply_chars: 4096            # max chars for generated reply text
+    # overrides:                          # optional: shadow content.yaml defaults for this store only
+    #   post_cadence_days: 1              # days between 最新情報 posts (global default: 1)
+    #   min_star_autoreply: 1             # hold reviews below this rating (1 = reply to all; 3 = hold 1-2★)
+    #   max_replies_per_run: 10           # cap on LLM reply calls per run (global default: 10)
+    #   max_post_chars: 1500              # max chars for generated post body (global default: 1500)
+    #   max_reply_chars: 4096             # max chars for generated reply (global default: 4096)
+    #   max_review_age_days: 90           # skip reviews older than N days (0 = no limit; global default: 90)
 
   the_body_kyoto:
     name: "THE BODY 京都店"
@@ -38,9 +39,12 @@ stores:
     #   action_type: "BOOK"
     #   url: ""   # e.g. https://yoursite.com/kyoto/book
     # overrides:
-    #   post_cadence_days: 1
-    #   min_star_autoreply: 1
-    #   max_replies_per_run: 10
+    #   post_cadence_days: 1              # days between 最新情報 posts (global default: 1)
+    #   min_star_autoreply: 1             # hold reviews below this rating (1 = reply to all; 3 = hold 1-2★)
+    #   max_replies_per_run: 10           # cap on LLM reply calls per run (global default: 10)
+    #   max_post_chars: 1500              # max chars for generated post body (global default: 1500)
+    #   max_reply_chars: 4096             # max chars for generated reply (global default: 4096)
+    #   max_review_age_days: 90           # skip reviews older than N days (0 = no limit; global default: 90)
 
   mybear_studio_kyoto:
     name: "MYBEAR STUDIO 京都店"
@@ -51,5 +55,9 @@ stores:
     #   action_type: "BOOK"
     #   url: ""   # e.g. https://yoursite.com/mybear/trial
     # overrides:
-    #   post_cadence_days: 2             # post every other day for less-frequent fitness content
-    #   min_star_autoreply: 3            # hold 1-2★ reviews for manual handling
+    #   post_cadence_days: 2              # post every other day for less-frequent fitness content
+    #   min_star_autoreply: 3             # hold 1-2★ reviews for manual handling
+    #   max_replies_per_run: 10           # cap on LLM reply calls per run (global default: 10)
+    #   max_post_chars: 1500              # max chars for generated post body (global default: 1500)
+    #   max_reply_chars: 4096             # max chars for generated reply (global default: 4096)
+    #   max_review_age_days: 90           # skip reviews older than N days (0 = no limit; global default: 90)
