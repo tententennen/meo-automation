@@ -4,6 +4,70 @@
 
 ---
 
+## Completed this run (run 35)
+
+### Fix: `effective_defaults` docstring missing `max_review_age_days` override key
+
+**Problem**: `config.py`'s `effective_defaults` docstring listed five allowed
+override keys:
+
+```
+Allowed override keys: post_cadence_days, max_post_chars, max_reply_chars,
+max_replies_per_run, min_star_autoreply.
+```
+
+`max_review_age_days` was added to `_ALLOWED_OVERRIDE_KEYS` in `validator.py`
+during run 22, and documented in `config/stores.yaml`'s commented-out override
+templates — but the docstring was never updated.  An operator reading
+`effective_defaults` in isolation would not find `max_review_age_days` in the
+list and might think it cannot be overridden per store.
+
+**Fix**: Added `max_review_age_days` to the docstring's allowed-key list.
+
+### Improvement: expanded theme pool from 4 to 8 themes per industry (`config/content.yaml`)
+
+**Problem**: With `_THEME_HISTORY_SIZE = 4` in `state.py`, the theme rotation
+de-prioritises the 4 most recently used themes before choosing the next one.
+With only 4 themes per industry, every theme was eligible again after just one
+full cycle — meaning the same 4 themes repeated in a fixed rotation with no
+effective variety beyond the order of selection.  For a tool that posts daily,
+this produces visibly repetitive content over a month.
+
+**Fix**: Added 4 new themes to each industry, bringing each pool to 8 themes.
+With `_THEME_HISTORY_SIZE = 4`, the system now always picks from the 4 freshest
+themes at any given moment — a 2× improvement in day-over-day variety.
+
+**New themes — `beauty_salon`** (added to existing 4):
+
+| Theme | Purpose |
+|---|---|
+| `スタッフ紹介・こだわりのご紹介` | Staff profiles / philosophy; builds personal connection |
+| `新メニュー・施術のご案内` | New treatment announcements |
+| `おうちケア・美容Tipsのご紹介` | At-home care tips; value-added educational content |
+| `ご予約・営業案内` | Booking/hours reminder; practical utility |
+
+**New themes — `fitness_studio`** (added to existing 4):
+
+| Theme | Purpose |
+|---|---|
+| `体験レッスン・入会キャンペーン` | Trial class / membership campaign |
+| `栄養・食事のアドバイス` | Nutrition/dietary advice; broadens content beyond workouts |
+| `会員様の声・成果報告` | Member testimonials / success stories |
+| `スケジュール・イベント情報` | Weekly schedule / event information |
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/config.py` | `effective_defaults` docstring: added `max_review_age_days` to allowed-key list |
+| `config/content.yaml` | Both industries: 4 → 8 themes (4 new entries each) |
+
+**Tests:** No new tests — purely a docstring + config file change.
+All 391/391 tests pass unchanged.
+
+---
+
+
 ## Completed this run (run 34)
 
 ### Fix: held-review snapshot not cleared when `min_star_autoreply` reverts to 1

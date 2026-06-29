@@ -50,7 +50,7 @@ def effective_defaults(store: dict[str, Any]) -> dict[str, Any]:
     Per-store values shadow the global default for that store only.
 
     Allowed override keys: post_cadence_days, max_post_chars, max_reply_chars,
-    max_replies_per_run, min_star_autoreply.
+    max_replies_per_run, min_star_autoreply, max_review_age_days.
 
     Example entry in stores.yaml:
         mybear_studio_kyoto:
