@@ -1,6 +1,102 @@
 # PROGRESS
 
-## Status: All milestones complete — 391/391 tests green (98% coverage)
+## Status: All milestones complete — 397/397 tests green (98% coverage)
+
+---
+
+## Completed this run (run 36)
+
+### Feature: Human-readable store names in Slack run-summary notifications
+
+**Problem**: `_format_message()` in `notify.py` used the store *key*
+(`the_body_osaka_shinsaibashi`) as the bullet label in every Slack message.
+The key is a valid Python identifier, not something an owner reads naturally.
+A run summary like:
+
+```
+• *the_body_osaka_shinsaibashi*: post: posted (スタッフ紹介)
+• *the_body_kyoto*: post: skipped
+• *mybear_studio_kyoto*: replies: 2
+```
+
+requires the owner to keep the key-to-name mapping in their head.
+
+**Fix**: `main.py` now includes `"store_name": store["name"]` in every per-store
+result dict assembled in the run loop.  `_format_message()` checks for `store_name`
+and formats the label as `"Name (key)"` when it is present, falling back to the key
+alone when absent (maintains backward compat with any hand-crafted test fixtures or
+external tooling that builds the results dict):
+
+```
+• *THE BODY 大阪 心斎橋店 (the_body_osaka_shinsaibashi)*: post: posted (スタッフ紹介)
+• *THE BODY 京都店 (the_body_kyoto)*: post: skipped
+• *MYBEAR STUDIO 京都店 (mybear_studio_kyoto)*: replies: 2
+```
+
+### Feature: `meo-preview` now shows 1★, 3★, and 5★ reply samples per store
+
+**Problem**: `meo-preview` generated a single reply sample using a fixed 3★ review.
+The owner had no way to verify how the AI handles the two most critical scenarios:
+
+- **1★** (angry customer) — requires an apologetic, corrective tone; the wrong reply
+  here causes real reputational damage.
+- **5★** (happy customer) — the other extreme; over-formal language would seem off.
+
+**Fix**: Replaced `_SAMPLE_REVIEW` (single 3★ dict) with `_SAMPLE_REVIEWS`
+(dict with `"ONE"`, `"THREE"`, and `"FIVE"` entries, each with a realistic comment).
+`run_preview()` now calls `generate_reply()` for all three; the result dict carries
+`replies: {"ONE": ..., "THREE": ..., "FIVE": ...}` instead of the old `reply: str`.
+
+Output format:
+```
+[レビュー返信サンプル — 3パターン]
+
+▸ 1★ 低評価
+<AI-generated reply for an unhappy customer>
+
+▸ 3★ 普通
+<AI-generated reply for a neutral customer>
+
+▸ 5★ 高評価
+<AI-generated reply for a delighted customer>
+```
+
+Error handling is per-rating: if one rating fails (e.g. a transient API error),
+the others still render.  `meo-preview` exits 1 if any reply generation fails,
+matching the existing behaviour for post generation errors.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/main.py` | `store_results` now includes `"store_name": store["name"]` |
+| `src/meo/notify.py` | `_format_message()`: `label = "Name (key)"` when `store_name` present; falls back to key |
+| `src/meo/tools/preview.py` | `_SAMPLE_REVIEWS` dict (3 reviews); `run_preview()` returns `replies` dict; `_format_output()` renders 3-rating block; `had_error` checks `reply_errors` |
+
+**New tests (+6 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_notify.py` | `test_format_store_name_shown_alongside_key` | `store_name` in result → label shows "Name (key)" in Slack message |
+| `tests/test_notify.py` | `test_format_falls_back_to_key_when_store_name_absent` | No `store_name` in result → falls back to `store_key` label |
+| `tests/test_preview.py` | `test_run_preview_returns_post_and_all_three_replies_per_store` | All three ratings returned in `replies` dict |
+| `tests/test_preview.py` | `test_run_preview_captures_reply_errors` | All-fail → `reply_errors` dict with all three ratings |
+| `tests/test_preview.py` | `test_run_preview_partial_reply_failure` | One rating fails → other two in `replies`; failed one in `reply_errors` |
+| `tests/test_preview.py` | `test_run_preview_generate_reply_called_for_three_ratings` | Exactly 3 `generate_reply` calls per store (ONE, THREE, FIVE) |
+| `tests/test_preview.py` | `test_main_exits_1_when_any_reply_fails` | Any reply error → exit 1 |
+| `tests/test_preview.py` | `test_format_output_shows_all_three_rating_labels` | Output contains 1★, 3★, 5★ section labels |
+
+**Updated tests (5 tests rewritten for new result shape):**
+
+| File | Test |
+|---|---|
+| `tests/test_preview.py` | `test_run_preview_returns_post_and_reply_for_each_store` → `test_run_preview_returns_post_and_all_three_replies_per_store` |
+| `tests/test_preview.py` | `test_run_preview_captures_reply_error` → `test_run_preview_captures_reply_errors` |
+| `tests/test_preview.py` | `test_format_output_contains_store_name_and_content` |
+| `tests/test_preview.py` | `test_format_output_marks_errors` → `test_format_output_marks_post_error` |
+| `tests/test_preview.py` | `test_format_output_marks_reply_error` |
+
+Total: **397/397 tests** (was 391).
 
 ---
 

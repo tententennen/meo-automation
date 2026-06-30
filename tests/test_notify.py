@@ -154,6 +154,34 @@ def test_format_manual_reviews_absent_when_zero():
     assert "need manual reply" not in msg
 
 
+def test_format_store_name_shown_alongside_key():
+    """When store_name is present, the Slack message shows name (key) not just the key."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "store_name": "THE BODY 京都店",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 1, "deferred": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "THE BODY 京都店" in msg
+    assert "the_body_kyoto" in msg
+
+
+def test_format_falls_back_to_key_when_store_name_absent():
+    """When store_name is absent (e.g. legacy results), fall back to store_key."""
+    results = [
+        {
+            "store_key": "mybear_studio_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "mybear_studio_kyoto" in msg
+
+
 def test_payload_contains_store_key(monkeypatch):
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
     mock_resp = MagicMock()

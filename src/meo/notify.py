@@ -50,10 +50,14 @@ def _format_message(results: list[dict[str, Any]], *, dry_run: bool) -> str:
     had_error = False
     for r in results:
         store_key = r.get("store_key", "?")
+        store_name = r.get("store_name")
+        # Show the human-readable name with the key in parentheses so the owner
+        # can read it at a glance without having to remember the key mapping.
+        label = f"{store_name} ({store_key})" if store_name else store_key
 
         if r.get("error"):
             had_error = True
-            lines.append(f"• *{store_key}*: ❌ {r['error']}")
+            lines.append(f"• *{label}*: ❌ {r['error']}")
             continue
 
         parts: list[str] = []
@@ -84,7 +88,7 @@ def _format_message(results: list[dict[str, Any]], *, dry_run: bool) -> str:
             parts.append(rev_part)
 
         detail = " | ".join(parts) if parts else "no actions"
-        lines.append(f"• *{store_key}*: {detail}")
+        lines.append(f"• *{label}*: {detail}")
 
     footer = "⚠️ Some errors occurred — check the Actions log." if had_error else "✅ All stores processed."
     lines.append(footer)

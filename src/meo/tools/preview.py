@@ -31,27 +31,55 @@ from ..content import generate_post, generate_reply
 
 _JST = ZoneInfo("Asia/Tokyo")
 
-# A realistic sample 3-star review used as input to generate_reply previews.
-# 3-star is the most instructive: it requires a mix of thanks and addressing concerns.
-_SAMPLE_REVIEW: dict[str, Any] = {
-    "reviewId": "preview_review",
-    "name": "accounts/0/locations/0/reviews/preview_review",
-    "reviewer": {"displayName": "お客様"},
-    "starRating": "THREE",
-    "comment": "スタッフの方は親切でしたが、少し待ち時間が長く感じました。サービス自体は良かったです。",
+# Three sample reviews at different star ratings so the owner can verify that
+# the AI generates appropriate replies for unhappy, neutral, and happy customers.
+# These are used ONLY for preview/testing — never in the live run.
+_SAMPLE_REVIEWS: dict[str, dict[str, Any]] = {
+    "ONE": {
+        "reviewId": "preview_review_1star",
+        "name": "accounts/0/locations/0/reviews/preview_review_1star",
+        "reviewer": {"displayName": "お客様"},
+        "starRating": "ONE",
+        "comment": "期待していたほどではありませんでした。スタッフの対応や施術のクオリティに改善の余地があると感じました。",
+    },
+    "THREE": {
+        "reviewId": "preview_review_3star",
+        "name": "accounts/0/locations/0/reviews/preview_review_3star",
+        "reviewer": {"displayName": "お客様"},
+        "starRating": "THREE",
+        "comment": "スタッフの方は親切でしたが、少し待ち時間が長く感じました。サービス自体は良かったです。",
+    },
+    "FIVE": {
+        "reviewId": "preview_review_5star",
+        "name": "accounts/0/locations/0/reviews/preview_review_5star",
+        "reviewer": {"displayName": "お客様"},
+        "starRating": "FIVE",
+        "comment": "とても素晴らしいサービスでした！スタッフの皆さんも丁寧で、また来たいと思います。ありがとうございました。",
+    },
 }
+
+_STAR_LABELS = {"ONE": "1★ 低評価", "THREE": "3★ 普通", "FIVE": "5★ 高評価"}
 
 
 def run_preview(stores: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Generate a post preview and a review-reply preview for each store.
+    """Generate a post preview and review-reply previews for each store.
 
-    Errors in individual stores are captured; other stores continue.
+    For each store, generates:
+    - One 最新情報 post sample
+    - Three review reply samples (1★, 3★, and 5★)
+
+    Errors in individual stores or individual star ratings are captured;
+    other stores / ratings continue.
 
     Returns:
         List of result dicts — one per store.
         Each dict always has 'store_key' and 'name'.
-        On success: 'post' and 'reply' keys.
-        On error:   'post_error' and/or 'reply_error' keys.
+        On success:
+            'post': str
+            'replies': {'ONE': str, 'THREE': str, 'FIVE': str}
+        On error:
+            'post_error': str  (instead of 'post')
+            'reply_errors': {'ONE': str, ...}  (subset for failed ratings)
     """
     results: list[dict[str, Any]] = []
     for store in stores:
@@ -60,10 +88,20 @@ def run_preview(stores: list[dict[str, Any]]) -> list[dict[str, Any]]:
             result["post"] = generate_post(store)
         except Exception as exc:
             result["post_error"] = str(exc)
-        try:
-            result["reply"] = generate_reply(_SAMPLE_REVIEW, store)
-        except Exception as exc:
-            result["reply_error"] = str(exc)
+
+        replies: dict[str, str] = {}
+        reply_errors: dict[str, str] = {}
+        for rating, sample in _SAMPLE_REVIEWS.items():
+            try:
+                replies[rating] = generate_reply(sample, store)
+            except Exception as exc:
+                reply_errors[rating] = str(exc)
+
+        if replies:
+            result["replies"] = replies
+        if reply_errors:
+            result["reply_errors"] = reply_errors
+
         results.append(result)
     return results
 
@@ -82,11 +120,17 @@ def _format_output(results: list[dict[str, Any]]) -> str:
             lines.append(r["post"])
         else:
             lines.append(f"ERROR: {r.get('post_error', '—')}")
-        lines.append("\n[レビュー返信 — サンプル3つ星レビュー]")
-        if "reply" in r:
-            lines.append(r["reply"])
-        else:
-            lines.append(f"ERROR: {r.get('reply_error', '—')}")
+
+        lines.append("\n[レビュー返信サンプル — 3パターン]")
+        replies = r.get("replies", {})
+        reply_errors = r.get("reply_errors", {})
+        for rating, label in _STAR_LABELS.items():
+            lines.append(f"\n▸ {label}")
+            if rating in replies:
+                lines.append(replies[rating])
+            else:
+                lines.append(f"ERROR: {reply_errors.get(rating, '—')}")
+
         lines.append("\n" + "-" * 60)
     return "\n".join(lines)
 
@@ -136,7 +180,7 @@ def main() -> None:
         out_path.write_text(output, encoding="utf-8")
         print(f"\nSaved to {out_path}", file=sys.stderr)
 
-    had_error = any("post_error" in r or "reply_error" in r for r in results)
+    had_error = any("post_error" in r or bool(r.get("reply_errors")) for r in results)
     sys.exit(1 if had_error else 0)
 
 

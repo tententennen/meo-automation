@@ -134,7 +134,7 @@ def main() -> None:
 
     for store in stores:
         store_key = store["key"]
-        store_results: dict[str, Any] = {"store_key": store_key}
+        store_results: dict[str, Any] = {"store_key": store_key, "store_name": store["name"]}
         logger.info("=== Processing store: %s ===", store["name"])
 
         # Validate config before making any API calls
