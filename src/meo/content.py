@@ -134,6 +134,28 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     return text
 
 
+# Google placeholder display names used for anonymous or deleted accounts.
+# Forwarding these to the LLM produces replies like "A Google Userさん、…" which is
+# jarring and unprofessional in a Japanese business context.
+_ANON_REVIEWER_NAMES: frozenset[str] = frozenset({
+    "a google user",
+    "google user",
+    "google ユーザー",
+    "googleユーザー",
+})
+
+
+def _sanitize_reviewer_name(name: str) -> str:
+    """Replace anonymous Google reviewer display names with a generic Japanese honorific.
+
+    Returns "お客様" when the name is blank or matches a known Google placeholder.
+    Returns the original name for all other reviewers.
+    """
+    if not name or name.lower() in _ANON_REVIEWER_NAMES:
+        return "お客様"
+    return name
+
+
 _STAR_LABELS: dict[str, str] = {
     "ONE":   "★☆☆☆☆（1/5）",
     "TWO":   "★★☆☆☆（2/5）",
@@ -170,7 +192,8 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     banned = ", ".join(conf.get("banned_words", []))
     max_chars = cfg.effective_defaults(store)["max_reply_chars"]
 
-    reviewer_name = review.get("reviewer", {}).get("displayName", "お客様")
+    raw_name = review.get("reviewer", {}).get("displayName", "")
+    reviewer_name = _sanitize_reviewer_name(raw_name)
     star_rating = review.get("starRating", "FIVE")
     comment = review.get("comment", "")
     date_context = _jst_date_context()

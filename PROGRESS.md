@@ -1,6 +1,86 @@
 # PROGRESS
 
-## Status: All milestones complete — 397/397 tests green (98% coverage)
+## Status: All milestones complete — 409/409 tests green (98% coverage)
+
+---
+
+## Completed this run (run 37)
+
+### Fix: anonymous Google reviewer names produced unprofessional replies (`src/meo/content.py`)
+
+**Problem**: Google uses placeholder `displayName` values like `"A Google User"` or
+`"Google ユーザー"` for anonymous or deleted accounts.  `generate_reply()` forwarded
+the raw `displayName` directly to the LLM prompt:
+
+```
+レビュアー名: A Google User
+```
+
+The LLM then generated replies like:
+
+```
+A Google User様、この度はご来店いただきありがとうございます…
+```
+
+This is jarring and unprofessional — a Japanese business owner would never address
+a customer by a placeholder English string.  Anonymous reviews are not uncommon on
+GBP, so this path was reached in practice on every store's first live run if any
+reviewers had deleted their accounts.
+
+**Fix**: Added `_ANON_REVIEWER_NAMES` (a `frozenset` of known Google placeholder
+names, matched case-insensitively) and `_sanitize_reviewer_name(name)` that returns
+`"お客様"` for anonymous or blank names, and the original name otherwise.
+
+```python
+_ANON_REVIEWER_NAMES: frozenset[str] = frozenset({
+    "a google user",
+    "google user",
+    "google ユーザー",
+    "googleユーザー",
+})
+
+def _sanitize_reviewer_name(name: str) -> str:
+    if not name or name.lower() in _ANON_REVIEWER_NAMES:
+        return "お客様"
+    return name
+```
+
+`generate_reply()` now calls `_sanitize_reviewer_name(raw_name)` so the LLM
+generates a natural Japanese reply:
+
+```
+お客様、この度はご来店いただきありがとうございます…
+```
+
+Named reviewers are unchanged — their `displayName` is passed through as before.
+The fallback for a completely absent `reviewer` dict also yields `"お客様"` via
+the empty-string branch of the helper.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/content.py` | `_ANON_REVIEWER_NAMES` constant; `_sanitize_reviewer_name()` helper; `generate_reply()` uses it instead of raw `displayName` |
+| `tests/test_content.py` | +12 tests covering all branches of the helper and its integration with `generate_reply()` |
+
+**New tests (+12 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_content.py` | `test_sanitize_reviewer_name[A Google User-お客様]` | English anonymous placeholder → お客様 |
+| `tests/test_content.py` | `test_sanitize_reviewer_name[a google user-お客様]` | Case-insensitive match |
+| `tests/test_content.py` | `test_sanitize_reviewer_name[Google User-お客様]` | Variant without "A" |
+| `tests/test_content.py` | `test_sanitize_reviewer_name[Google ユーザー-お客様]` | Japanese locale placeholder |
+| `tests/test_content.py` | `test_sanitize_reviewer_name[Googleユーザー-お客様]` | Japanese locale without space |
+| `tests/test_content.py` | `test_sanitize_reviewer_name[-お客様]` | Empty string → お客様 |
+| `tests/test_content.py` | `test_sanitize_reviewer_name[田中太郎-田中太郎]` | Real Japanese name unchanged |
+| `tests/test_content.py` | `test_sanitize_reviewer_name[John Smith-John Smith]` | Foreign name unchanged |
+| `tests/test_content.py` | `test_sanitize_reviewer_name[山田 花子-山田 花子]` | Japanese name with space unchanged |
+| `tests/test_content.py` | `test_generate_reply_replaces_anonymous_name_with_okakusama` | "A Google User" in review → "お客様" in LLM prompt; placeholder absent |
+| `tests/test_content.py` | `test_generate_reply_preserves_real_reviewer_name` | Named reviewer → real name in prompt |
+| `tests/test_content.py` | `test_generate_reply_uses_okakusama_when_reviewer_key_absent` | No `reviewer` dict → "お客様" in prompt |
+
+Total: **409/409 tests** (was 397).
 
 ---
 

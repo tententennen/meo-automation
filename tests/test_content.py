@@ -326,6 +326,62 @@ def test_call_with_retry_sleeps_between_attempts():
 
 
 # ---------------------------------------------------------------------------
+# _sanitize_reviewer_name() tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw_name,expected", [
+    ("A Google User",   "お客様"),   # most common anonymous placeholder (English)
+    ("a google user",   "お客様"),   # case-insensitive match
+    ("Google User",     "お客様"),   # variant without leading "A"
+    ("Google ユーザー",  "お客様"),   # Japanese locale placeholder
+    ("Googleユーザー",   "お客様"),   # Japanese locale without space
+    ("",                "お客様"),   # empty string — treat as anonymous
+    ("田中太郎",         "田中太郎"), # real Japanese name — unchanged
+    ("John Smith",      "John Smith"), # foreign name — unchanged
+    ("山田 花子",        "山田 花子"), # Japanese name with space — unchanged
+])
+def test_sanitize_reviewer_name(raw_name, expected):
+    assert content._sanitize_reviewer_name(raw_name) == expected
+
+
+def test_generate_reply_replaces_anonymous_name_with_okakusama():
+    """'A Google User' in displayName must become 'お客様' in the LLM prompt."""
+    anon_review = {
+        "reviewId": "anon001",
+        "reviewer": {"displayName": "A Google User"},
+        "starRating": "FOUR",
+        "comment": "良かったです。",
+    }
+    with patch("meo.content._call_llm", return_value="ありがとうございます") as mock_llm:
+        content.generate_reply(anon_review, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "お客様" in user_prompt
+    assert "A Google User" not in user_prompt
+
+
+def test_generate_reply_preserves_real_reviewer_name():
+    """Named reviewers must have their display name forwarded to the LLM prompt."""
+    with patch("meo.content._call_llm", return_value="ありがとうございます") as mock_llm:
+        content.generate_reply(_REVIEW, _STORE)  # _REVIEW has displayName "田中太郎"
+    user_prompt = mock_llm.call_args.args[0]
+    assert "田中太郎" in user_prompt
+    assert "お客様" not in user_prompt
+
+
+def test_generate_reply_uses_okakusama_when_reviewer_key_absent():
+    """When the reviewer dict is entirely absent the name defaults to 'お客様'."""
+    review_no_reviewer = {
+        "reviewId": "rev_no_name",
+        "starRating": "THREE",
+        "comment": "普通でした。",
+    }
+    with patch("meo.content._call_llm", return_value="ありがとうございます") as mock_llm:
+        content.generate_reply(review_no_reviewer, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "お客様" in user_prompt
+
+
+# ---------------------------------------------------------------------------
 # _star_label() tests
 # ---------------------------------------------------------------------------
 
