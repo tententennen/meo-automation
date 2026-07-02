@@ -128,6 +128,7 @@ def run_reviews_for_store(
                 "reviewer": r.get("reviewer", {}).get("displayName", ""),
                 "stars": r.get("starRating", ""),
                 "comment": r.get("comment", ""),
+                "review_date": _parse_review_date(r),
             }
             for r in manual
         ]
@@ -196,6 +197,22 @@ def _extract_review_id(review: dict[str, Any]) -> str:
     """
     name = review.get("reviewId") or review.get("name", "")
     return name.split("/")[-1]
+
+
+def _parse_review_date(review: dict[str, Any]) -> str:
+    """Return the review creation date as YYYY-MM-DD, or '' if absent or malformed.
+
+    The GBP API returns createTime in RFC 3339 format (e.g. "2024-01-15T10:00:00.000Z").
+    We extract the date part only — callers use this to populate the held-review snapshot
+    so operators can see at a glance how old each held review is when they export to CSV.
+    """
+    ts = review.get("createTime", "")
+    if not ts:
+        return ""
+    try:
+        return ts.split("T")[0]
+    except (IndexError, AttributeError):
+        return ""
 
 
 def _review_age_days(review: dict[str, Any]) -> float | None:

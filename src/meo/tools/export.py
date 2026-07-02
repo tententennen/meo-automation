@@ -31,7 +31,7 @@ from .. import state
 
 _POST_FIELDS = ["store_key", "store_name", "date", "theme", "text", "post_name"]
 _REPLY_FIELDS = ["store_key", "store_name", "date", "reviewer", "stars", "review_id", "reply"]
-_HELD_FIELDS = ["store_key", "store_name", "date", "review_id", "reviewer", "stars", "comment"]
+_HELD_FIELDS = ["store_key", "store_name", "date", "review_date", "review_id", "reviewer", "stars", "comment"]
 
 
 def export_posts(stores: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -67,6 +67,7 @@ def export_held_reviews(stores: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "store_key": key,
                 "store_name": store["name"],
                 "date": entry.get("date", ""),
+                "review_date": entry.get("review_date", ""),
                 "review_id": entry.get("review_id", ""),
                 "reviewer": entry.get("reviewer", ""),
                 "stars": entry.get("stars", ""),

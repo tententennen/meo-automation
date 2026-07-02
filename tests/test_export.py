@@ -53,6 +53,7 @@ _REPLY_HISTORY_KYOTO = [
 _HELD_REVIEWS_KYOTO = [
     {
         "date": "2026-01-10",
+        "review_date": "2026-01-05",
         "review_id": "rev_low_1",
         "reviewer": "不満なお客様",
         "stars": "ONE",
@@ -60,6 +61,7 @@ _HELD_REVIEWS_KYOTO = [
     },
     {
         "date": "2026-01-10",
+        "review_date": "2026-01-03",
         "review_id": "rev_low_2",
         "reviewer": "まあまあ",
         "stars": "TWO",
@@ -296,6 +298,7 @@ class TestMain:
         from meo.tools.export import main
         main()
         out = capsys.readouterr().out
+        assert "review_date" in out
         assert "review_id" in out
         assert "reviewer" in out
         assert "comment" in out
@@ -337,6 +340,7 @@ class TestExportHeldReviews:
         assert row["store_key"] == "the_body_kyoto"
         assert row["store_name"] == "THE BODY 京都店"
         assert row["date"] == "2026-01-10"
+        assert row["review_date"] == "2026-01-05"
         assert row["review_id"] == "rev_low_1"
         assert row["reviewer"] == "不満なお客様"
         assert row["stars"] == "ONE"

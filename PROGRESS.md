@@ -1,6 +1,102 @@
 # PROGRESS
 
-## Status: All milestones complete — 409/409 tests green (98% coverage)
+## Status: All milestones complete — 413/413 tests green (98% coverage)
+
+---
+
+## Completed this run (run 38)
+
+### Feature: `review_date` (original review creation date) in held-reviews snapshot and CSV export
+
+**Problem**: The held-review snapshot stored in `state.json` (and exported via
+`meo-export held-reviews`) included a `date` column showing **when the tool flagged
+the review** (i.e. the run date), but not **when the reviewer actually wrote it**.
+
+For a business owner managing 1★ reviews held for manual reply, the original
+review date is critical for prioritisation:
+
+- A 1★ review written yesterday needs a human response today.
+- A 1★ review from 60 days ago (held because it pre-dates when the tool was set up)
+  may be lower priority or already resolved via other channels.
+
+Without `review_date`, both cases looked identical in the CSV — the only date
+visible was the run date. Operators had to visit GBP to look up each review's
+original date before deciding which to handle first.
+
+**Fix**: Added `_parse_review_date(review)` helper to `reviews.py`:
+
+```python
+def _parse_review_date(review: dict[str, Any]) -> str:
+    """Return the review creation date as YYYY-MM-DD, or '' if absent or malformed."""
+    ts = review.get("createTime", "")
+    if not ts:
+        return ""
+    try:
+        return ts.split("T")[0]
+    except (IndexError, AttributeError):
+        return ""
+```
+
+This parses the GBP API's RFC 3339 `createTime` field (e.g. `"2024-01-15T10:00:00.000Z"`)
+and returns just the date portion (`"2024-01-15"`). Returns `""` for reviews with a
+missing, `None`, or malformed timestamp — never raises.
+
+`_parse_review_date` is called when building the held-review snapshot in
+`run_reviews_for_store()`:
+
+```python
+held_snapshots = [
+    {
+        "review_id": _extract_review_id(r),
+        "reviewer": r.get("reviewer", {}).get("displayName", ""),
+        "stars": r.get("starRating", ""),
+        "comment": r.get("comment", ""),
+        "review_date": _parse_review_date(r),   # ← new
+    }
+    for r in manual
+]
+```
+
+`_HELD_FIELDS` in `export.py` now includes `"review_date"` (column order:
+`store_key, store_name, date, review_date, review_id, reviewer, stars, comment`).
+
+**CSV before** (two date columns indistinguishable):
+```
+store_key,store_name,date,review_id,reviewer,stars,comment
+the_body_kyoto,THE BODY 京都店,2026-07-02,rev001,不満なお客様,ONE,スタッフの態度が悪かった
+```
+
+**CSV after**:
+```
+store_key,store_name,date,review_date,review_id,reviewer,stars,comment
+the_body_kyoto,THE BODY 京都店,2026-07-02,2026-06-25,rev001,不満なお客様,ONE,スタッフの態度が悪かった
+```
+
+The `date` column is the run date (when flagged). The `review_date` column is when
+the customer posted the review. With this change, operators can sort by `review_date`
+in Excel to handle the most recent critical reviews first.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/reviews.py` | `_parse_review_date()` helper; `held_snapshots` dict now includes `"review_date"` |
+| `src/meo/tools/export.py` | `"review_date"` added to `_HELD_FIELDS`; `export_held_reviews()` includes it in each row |
+| `tests/test_reviews.py` | Import `_parse_review_date`; add `createTime` to `_LOW_STAR_REVIEW` fixture; assert `review_date` in snapshot test; add `max_review_age_days: 0` to config patches that test the min-star filter; 4 new tests for `_parse_review_date` |
+| `tests/test_export.py` | `_HELD_REVIEWS_KYOTO` fixture: add `"review_date"` to both entries; `test_row_includes_required_fields`: assert `row["review_date"]`; `test_held_reviews_prints_csv_header`: assert `"review_date"` in output |
+
+**New tests (+4 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_reviews.py` | `test_parse_review_date_extracts_date_from_rfc3339` | RFC 3339 timestamp → YYYY-MM-DD |
+| `tests/test_reviews.py` | `test_parse_review_date_returns_empty_when_create_time_missing` | Missing or empty `createTime` → `""` |
+| `tests/test_reviews.py` | `test_parse_review_date_returns_empty_for_none_create_time` | `None` `createTime` → `""` |
+| `tests/test_reviews.py` | `test_parse_review_date_returns_empty_for_non_string_create_time` | Non-string `createTime` (e.g. `int`) → `""` via `AttributeError` guard |
+
+`reviews.py` coverage: 98% → **100%** (the `except` block in `_parse_review_date` is now covered).
+
+Total: **413/413 tests** (was 409).
 
 ---
 

@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 
-from meo.reviews import run_reviews_for_store, _has_reply, _extract_review_id, _star_to_int, _review_age_days
+from meo.reviews import run_reviews_for_store, _has_reply, _extract_review_id, _star_to_int, _review_age_days, _parse_review_date
 
 
 @pytest.fixture(autouse=True)
@@ -358,6 +358,7 @@ _LOW_STAR_REVIEW = {
     "reviewer": {"displayName": "不満なお客様"},
     "starRating": "ONE",
     "comment": "残念でした。",
+    "createTime": "2024-03-15T10:30:00.000Z",
 }
 
 
@@ -366,7 +367,9 @@ def test_record_held_reviews_called_with_manual_reviews():
     gbp = MagicMock()
     gbp.list_reviews.return_value = [_LOW_STAR_REVIEW]
     gbp.reply_to_review.return_value = {}
-    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3}}
+    # max_review_age_days=0 disables the age filter so the 1★ review reaches the
+    # star-rating check; this test is specifically about the min_star threshold behaviour.
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3, "max_review_age_days": 0}}
     with patch("meo.reviews.generate_reply", return_value="返信"), \
          patch("meo.config.content", return_value=conf), \
          patch("meo.reviews.record_held_reviews") as mock_held:
@@ -378,13 +381,14 @@ def test_record_held_reviews_called_with_manual_reviews():
     assert snapshots_arg[0]["review_id"] == "rev_low"
     assert snapshots_arg[0]["stars"] == "ONE"
     assert snapshots_arg[0]["reviewer"] == "不満なお客様"
+    assert snapshots_arg[0]["review_date"] == "2024-03-15"
 
 
 def test_record_held_reviews_not_called_in_dry_run():
     """Dry run must not persist the held-review snapshot."""
     gbp = MagicMock()
     gbp.list_reviews.return_value = [_LOW_STAR_REVIEW]
-    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3}}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3, "max_review_age_days": 0}}
     with patch("meo.reviews.generate_reply", return_value="返信"), \
          patch("meo.config.content", return_value=conf), \
          patch("meo.reviews.record_held_reviews") as mock_held:
@@ -452,6 +456,28 @@ def test_review_age_days_parses_rfc3339_with_z_suffix():
     age = _review_age_days({"createTime": now_ts})
     assert age is not None
     assert age < 0.01  # should be less than ~15 minutes
+
+
+# ---------------------------------------------------------------------------
+# _parse_review_date helper
+# ---------------------------------------------------------------------------
+
+def test_parse_review_date_extracts_date_from_rfc3339():
+    assert _parse_review_date({"createTime": "2024-03-15T10:30:00.000Z"}) == "2024-03-15"
+
+
+def test_parse_review_date_returns_empty_when_create_time_missing():
+    assert _parse_review_date({}) == ""
+    assert _parse_review_date({"createTime": ""}) == ""
+
+
+def test_parse_review_date_returns_empty_for_none_create_time():
+    assert _parse_review_date({"createTime": None}) == ""
+
+
+def test_parse_review_date_returns_empty_for_non_string_create_time():
+    # createTime is always a string in the GBP API, but defend against malformed data
+    assert _parse_review_date({"createTime": 20240315}) == ""
 
 
 # ---------------------------------------------------------------------------
