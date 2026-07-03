@@ -41,7 +41,7 @@ from .posts import run_post_for_store
 from .reviews import run_reviews_for_store
 from .validator import validate_all
 
-_LOG_DIR = Path(__file__).resolve().parents[3] / "logs"
+_LOG_DIR = Path(__file__).resolve().parents[2] / "logs"  # src/meo/main.py → parents[2] = repo root
 
 
 def _setup_logging(dry_run: bool) -> None:

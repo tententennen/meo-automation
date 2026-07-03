@@ -1,6 +1,92 @@
 # PROGRESS
 
-## Status: All milestones complete — 413/413 tests green (98% coverage)
+## Status: All milestones complete — 416/416 tests green (98% coverage)
+
+---
+
+## Completed this run (run 39)
+
+### Fix: off-by-one in `parents[]` path index — logs and state were silently written outside the repo
+
+**Problem**: Three module-level path constants used the wrong `parents[N]` index
+when computing the project root from `__file__`:
+
+| File | Constant | Used | Correct | Resolved to (wrong) |
+|---|---|---|---|---|
+| `src/meo/state.py` | `_STATE_FILE` | `parents[3]` | `parents[2]` | `/home/user/logs/state.json` |
+| `src/meo/main.py` | `_LOG_DIR` | `parents[3]` | `parents[2]` | `/home/user/logs/` |
+| `src/meo/tools/status.py` | `_STATE_FILE` | `parents[4]` | `parents[3]` | `/home/user/logs/state.json` |
+
+`config.py` (at the same directory depth as `state.py` and `main.py`) correctly uses
+`parents[2]` and even has a comment confirming it:
+`_ROOT = Path(__file__).resolve().parents[2]  # repo root (src/meo/config.py → meo-automation/)`.
+
+The wrong indices caused:
+
+1. **Log file at `/home/user/logs/meo.log`** instead of `logs/meo.log` in the repo root.
+   The GitHub Actions `Upload log artifact` step uses a relative `path: logs/meo.log`
+   (resolved from workspace root). Since the log was in a sibling directory of the
+   workspace, the artifact step found nothing — silently ignored by
+   `if-no-files-found: ignore`.
+
+2. **State at `/home/user/logs/state.json`** instead of `logs/state.json` in the repo root.
+   The `Save post state` cache step saves `logs/state.json` relative to the workspace.
+   Since `state.json` was written one directory up, the cache step found nothing —
+   silently ignored by `continue-on-error: true`.
+   This meant **state persistence never worked in the GitHub Actions runner**:
+   - The "already posted today" cadence guard saw an empty state on every run
+   - Theme rotation and image rotation had no memory across runs
+   - The duplicate-reply guard had no memory across runs
+
+3. **`meo-status` read from the wrong `state.json`** (one directory up), showing
+   "State file: not yet created" or stale data even after live runs.
+
+The bug was hidden because:
+- Credentials have not been configured yet (the tool exits early before writing state)
+- Tests in `test_state.py` use an `autouse` fixture that monkeypatches `_STATE_FILE`
+  to a `tmp_path`, bypassing the constant's real value entirely
+
+**Fix**: Corrected the index in all three files:
+
+```python
+# Before (wrong — resolves to parent of project root):
+_STATE_FILE = Path(__file__).resolve().parents[3] / "logs" / "state.json"  # state.py
+_LOG_DIR    = Path(__file__).resolve().parents[3] / "logs"                  # main.py
+_STATE_FILE = Path(__file__).resolve().parents[4] / "logs" / "state.json"  # status.py
+
+# After (correct — resolves to project root):
+_STATE_FILE = Path(__file__).resolve().parents[2] / "logs" / "state.json"  # state.py
+_LOG_DIR    = Path(__file__).resolve().parents[2] / "logs"                  # main.py
+_STATE_FILE = Path(__file__).resolve().parents[3] / "logs" / "state.json"  # status.py
+```
+
+**Verification**: All three constants now resolve to the same project root as
+`config._ROOT` (the reference implementation with a verified-correct index).
+
+**Regression test** (`tests/test_paths.py`): Added 3 new tests that import each
+module and assert the constant equals `config._ROOT / "logs" / "state.json"` (or
+`/ "logs"` for `_LOG_DIR`). These tests do NOT use monkeypatching — they verify the
+real computed value. If the index is wrong again, the test fails immediately with a
+clear message explaining the production impact.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | `_STATE_FILE`: `parents[3]` → `parents[2]` |
+| `src/meo/main.py` | `_LOG_DIR`: `parents[3]` → `parents[2]` |
+| `src/meo/tools/status.py` | `_STATE_FILE`: `parents[4]` → `parents[3]` |
+| `tests/test_paths.py` | New: 3 regression tests for path constant correctness |
+
+**New tests (+3 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_paths.py` | `test_state_file_resolves_inside_project` | `state._STATE_FILE` = `{repo_root}/logs/state.json` |
+| `tests/test_paths.py` | `test_log_dir_resolves_inside_project` | `main._LOG_DIR` = `{repo_root}/logs` |
+| `tests/test_paths.py` | `test_status_state_file_resolves_inside_project` | `status._STATE_FILE` = `{repo_root}/logs/state.json` |
+
+Total: **416/416 tests** (was 413).
 
 ---
 

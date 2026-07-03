@@ -25,7 +25,7 @@ except ImportError:
 from meo import config as cfg
 
 _JST = ZoneInfo("Asia/Tokyo")
-_STATE_FILE = Path(__file__).resolve().parents[4] / "logs" / "state.json"
+_STATE_FILE = Path(__file__).resolve().parents[3] / "logs" / "state.json"  # src/meo/tools/status.py → parents[3] = repo root
 
 _REQUIRED_ENV_VARS = [
     "GOOGLE_CLIENT_ID",

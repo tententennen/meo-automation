@@ -28,7 +28,7 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
-_STATE_FILE = Path(__file__).resolve().parents[3] / "logs" / "state.json"
+_STATE_FILE = Path(__file__).resolve().parents[2] / "logs" / "state.json"  # src/meo/state.py → parents[2] = repo root
 
 # How many recently-used Drive image IDs to remember per store.
 _IMAGE_HISTORY_SIZE = 5
