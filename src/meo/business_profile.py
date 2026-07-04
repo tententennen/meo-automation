@@ -38,6 +38,40 @@ _REVIEW_REPLY_BASE = (
 _MEDIA_UPLOAD_BASE = "https://mybusiness.googleapis.com/upload/v4/{location}/media"
 
 
+def _raise_for_status(resp: requests.Response) -> None:
+    """Call raise_for_status() with the API error body included in the message.
+
+    requests.raise_for_status() only shows the HTTP status line; the GBP API
+    always returns a JSON body with a human-readable 'message' field.  Including
+    it makes error logs and Slack notifications directly actionable without
+    needing to inspect raw responses.
+
+    For 403 specifically, appends a hint about Business Profile API access,
+    because PERMISSION_DENIED is the most common first-run error (API not yet
+    approved or OAuth scopes not granted).
+    """
+    if resp.ok:
+        return
+    try:
+        detail = resp.json().get("error", {}).get("message", "")
+    except Exception:
+        detail = resp.text[:200] if resp.text else ""
+
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as exc:
+        msg = str(exc)
+        if detail:
+            msg = f"{msg} — API error: {detail}"
+        if resp.status_code == 403:
+            msg = (
+                f"{msg}\n"
+                "Hint: If you have not yet requested Business Profile API access, "
+                "visit https://developers.google.com/my-business/content/prereqs"
+            )
+        raise requests.HTTPError(msg, response=resp) from exc
+
+
 class BusinessProfileClient:
     """Thin wrapper around the GBP REST API using an authorized requests session."""
 
@@ -82,7 +116,7 @@ class BusinessProfileClient:
             body["media"] = [{"mediaFormat": "PHOTO", "sourceUrl": media_url}]
 
         resp = self._session.post(url, json=body)
-        resp.raise_for_status()
+        _raise_for_status(resp)
         result = resp.json()
         logger.info("Created local post: %s", result.get("name"))
         return result
@@ -134,7 +168,7 @@ class BusinessProfileClient:
             data=body,
             headers={"Content-Type": f"multipart/related; boundary={boundary}"},
         )
-        resp.raise_for_status()
+        _raise_for_status(resp)
         result = resp.json()
         # GBP returns googleUrl for hosted images; fall back to sourceUrl if absent.
         google_url = result.get("googleUrl") or result.get("sourceUrl")
@@ -162,7 +196,7 @@ class BusinessProfileClient:
 
         while True:
             resp = self._session.get(url, params=params)
-            resp.raise_for_status()
+            _raise_for_status(resp)
             data = resp.json()
             reviews.extend(data.get("reviews", []))
             next_token = data.get("nextPageToken")
@@ -185,7 +219,7 @@ class BusinessProfileClient:
         )
         body = {"comment": reply_text}
         resp = self._session.put(url, json=body)
-        resp.raise_for_status()
+        _raise_for_status(resp)
         result = resp.json()
         logger.info("Replied to review %s on %s", review_id, location_id)
         return result

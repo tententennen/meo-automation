@@ -1,6 +1,84 @@
 # PROGRESS
 
-## Status: All milestones complete — 416/416 tests green (98% coverage)
+## Status: All milestones complete — 421/421 tests green (98% coverage)
+
+---
+
+## Completed this run (run 40)
+
+### Fix: GBP API errors now include the JSON error body and a 403 hint (`src/meo/business_profile.py`)
+
+**Problem**: `raise_for_status()` only includes the HTTP status line in its exception
+message — e.g. `"403 Client Error: Forbidden for url: https://mybusiness.googleapis.com/..."`.
+The GBP API always returns a JSON body with a human-readable `message` field (e.g.
+`"PERMISSION_DENIED: Request had insufficient authentication scopes."`).  Without it,
+errors logged by `main.py` and surfaced in Slack notifications gave no actionable
+detail — the owner would need to inspect raw API responses or workflow logs separately.
+
+A 403 is the most common first-run error: it fires when the Business Profile API has
+not yet been approved for the Google Cloud project (access requires manual approval
+at https://developers.google.com/my-business/content/prereqs) or when the OAuth
+consent screen scopes were not granted.  Without a clear hint, an owner seeing `403
+Forbidden` might assume it's a credentials bug and spend time regenerating tokens
+rather than requesting API access.
+
+**Fix**: Replaced all `resp.raise_for_status()` calls in `business_profile.py` with
+a new `_raise_for_status(resp)` helper that:
+
+1. Returns immediately for 2xx responses (zero overhead on the happy path).
+2. On error, extracts `resp.json()["error"]["message"]` when the response body is
+   valid JSON (GBP always returns JSON errors); falls back to the first 200 chars of
+   `resp.text` for non-JSON bodies (e.g. load-balancer HTML error pages).
+3. Appends the API error detail to the exception message: `"403 Client Error: ... —
+   API error: PERMISSION_DENIED: ..."`.
+4. For 403 specifically, appends a one-line hint pointing to the API access form.
+
+Example output before vs after:
+
+```
+# Before
+[the_body_kyoto] Post failed: 403 Client Error: Forbidden for url: https://mybusiness.googleapis.com/...
+
+# After
+[the_body_kyoto] Post failed: 403 Client Error: Forbidden for url: ... — API error: PERMISSION_DENIED
+Hint: If you have not yet requested Business Profile API access, visit https://developers.google.com/my-business/content/prereqs
+```
+
+All 5 `resp.raise_for_status()` calls in the module (2 in local-posts, 2 in reviews,
+1 in media-upload) now go through `_raise_for_status`.  The `resp.raise_for_status()`
+inside the helper itself is the only remaining direct call — it's the actual error
+raiser that the helper wraps.
+
+### Fix: README was missing `meo-reset` and `meo-export held-reviews` from CLI table
+
+**Problem**: The CLI tools table in README listed 8 commands but omitted:
+- `meo-reset` (added run 20, clears state sections)
+- `meo-export held-reviews` (added run 20, exports reviews held for manual reply)
+
+An operator reading the README would not discover these commands without running
+`meo-reset --help` or looking at `pyproject.toml`.
+
+**Fix**: Added both rows to the table and added example invocations for each.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/business_profile.py` | `_raise_for_status()` helper; all 5 `resp.raise_for_status()` call sites replaced |
+| `tests/test_business_profile.py` | +5 tests for `_raise_for_status`: noop on success; JSON detail included; 403 hint appended; non-JSON fallback; 404 has no hint |
+| `README.md` | `meo-reset` and `meo-export held-reviews` added to CLI table; example invocations added |
+
+**New tests (+5 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_business_profile.py` | `test_raise_for_status_is_noop_on_success` | 2xx response → returns without raising |
+| `tests/test_business_profile.py` | `test_raise_for_status_includes_api_error_message` | 400 with JSON body → message in exception |
+| `tests/test_business_profile.py` | `test_raise_for_status_403_appends_api_access_hint` | 403 → "prereqs" URL in exception |
+| `tests/test_business_profile.py` | `test_raise_for_status_non_json_uses_text_excerpt` | 500 with non-JSON body → text excerpt in exception |
+| `tests/test_business_profile.py` | `test_raise_for_status_non_403_does_not_add_hint` | 404 → no "prereqs" hint |
+
+Total: **421/421 tests** (was 416).
 
 ---
 

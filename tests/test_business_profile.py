@@ -2,8 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 import pytest
+import requests
 
-from meo.business_profile import BusinessProfileClient, _AuthSession
+from meo.business_profile import BusinessProfileClient, _AuthSession, _raise_for_status
 
 
 _LOC = "accounts/1/locations/42"
@@ -245,6 +246,68 @@ def test_retry_config_includes_put():
 
 # ---------------------------------------------------------------------------
 # _refresh_if_needed — credential expiry handling
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# _raise_for_status
+# ---------------------------------------------------------------------------
+
+def _error_resp(status_code: int, json_body: dict | None = None, text: str = "") -> MagicMock:
+    """Build a mock response that simulates a failed API call."""
+    resp = MagicMock()
+    resp.ok = False
+    resp.status_code = status_code
+    resp.text = text
+    if json_body is not None:
+        resp.json.return_value = json_body
+    else:
+        resp.json.side_effect = ValueError("not json")
+    resp.raise_for_status.side_effect = requests.HTTPError(
+        f"{status_code} Client Error", response=resp
+    )
+    return resp
+
+
+def test_raise_for_status_is_noop_on_success():
+    resp = MagicMock()
+    resp.ok = True
+    _raise_for_status(resp)  # must not raise
+
+
+def test_raise_for_status_includes_api_error_message():
+    resp = _error_resp(
+        400,
+        json_body={"error": {"code": 400, "message": "Invalid location ID", "status": "INVALID_ARGUMENT"}},
+    )
+    with pytest.raises(requests.HTTPError, match="Invalid location ID"):
+        _raise_for_status(resp)
+
+
+def test_raise_for_status_403_appends_api_access_hint():
+    resp = _error_resp(
+        403,
+        json_body={"error": {"code": 403, "message": "PERMISSION_DENIED", "status": "PERMISSION_DENIED"}},
+    )
+    with pytest.raises(requests.HTTPError, match="prereqs"):
+        _raise_for_status(resp)
+
+
+def test_raise_for_status_non_json_uses_text_excerpt():
+    resp = _error_resp(500, json_body=None, text="Internal Server Error details here")
+    with pytest.raises(requests.HTTPError, match="Internal Server Error"):
+        _raise_for_status(resp)
+
+
+def test_raise_for_status_non_403_does_not_add_hint():
+    resp = _error_resp(
+        404,
+        json_body={"error": {"code": 404, "message": "Not found", "status": "NOT_FOUND"}},
+    )
+    with pytest.raises(requests.HTTPError) as exc_info:
+        _raise_for_status(resp)
+    assert "prereqs" not in str(exc_info.value)
+
+
 # ---------------------------------------------------------------------------
 
 def test_refresh_if_needed_does_nothing_when_creds_valid():

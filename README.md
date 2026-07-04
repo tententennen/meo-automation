@@ -167,11 +167,18 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-report` | Print recent post and reply history from state.json |
 | `meo-export posts` | Export post history to CSV (for Excel / Google Sheets) |
 | `meo-export replies` | Export review-reply history to CSV |
+| `meo-export held-reviews` | Export reviews held for manual reply to CSV (set when `min_star_autoreply > 1`) |
+| `meo-reset` | Reset state for one store or all stores (post guard, image/theme history, reply history) |
 
 ```bash
-# Examples
+# Export examples
 meo-export posts --output posts.csv
 meo-export replies --store the_body_kyoto --output kyoto_replies.csv
+meo-export held-reviews --output held.csv   # reviews awaiting manual reply
+
+# Reset examples (use when re-testing or after manual interventions)
+meo-reset post-guard --store the_body_kyoto  # allow a new post today for one store
+meo-reset all                                 # clear all state for all stores
 ```
 
 ---
