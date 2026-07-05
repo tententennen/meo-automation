@@ -1,6 +1,76 @@
 # PROGRESS
 
-## Status: All milestones complete — 421/421 tests green (98% coverage)
+## Status: All milestones complete — 424/424 tests green (98% coverage)
+
+---
+
+## Completed this run (run 41)
+
+### Fix: LLM provider guard against None/empty responses (`src/meo/content.py`)
+
+**Problem**: Two code paths in the LLM provider functions could raise confusing
+Python built-in exceptions instead of the `RuntimeError` that `_call_with_retry`
+uses to decide whether to retry:
+
+1. **`_call_anthropic`** — `return message.content[0].text` would raise `IndexError`
+   if the Anthropic API returned a message with an empty `content` list.  This can
+   happen if the response was filtered or truncated by the safety layer.
+   `IndexError` is not caught by `_call_with_retry` (which catches only `RuntimeError`,
+   `EnvironmentError`, and `ValueError`), so the error propagated all the way to
+   `main.py`'s `except Exception` handler as an unhelpful traceback.
+
+2. **`_call_openai`** — `return response.choices[0].message.content` had two
+   failure modes:
+   - `IndexError` on empty `choices` list (defensive case — API returning nothing).
+   - Returns `None` when `finish_reason` is `"tool_calls"` (the model was tricked into
+     calling a non-existent function — unexpected, but possible with adversarial inputs).
+     The caller's `text.strip()` then raises `AttributeError: 'NoneType' object has
+     no attribute 'strip'`, again bypassing `_call_with_retry` entirely.
+
+In both cases, the retry logic was silently skipped, and the error message reaching
+the operator was a raw Python traceback rather than a clear description.
+
+**Fix**: Added explicit guards immediately after each API call:
+
+```python
+# _call_anthropic — after messages.create():
+if not message.content:
+    raise RuntimeError("Anthropic returned an empty content list")
+return message.content[0].text
+
+# _call_openai — after chat.completions.create():
+if not response.choices:
+    raise RuntimeError("OpenAI returned an empty choices list")
+content = response.choices[0].message.content
+if content is None:
+    raise RuntimeError(
+        "OpenAI returned no text content "
+        "(finish_reason may be 'tool_calls' — check model and prompt)"
+    )
+return content
+```
+
+All three guards raise `RuntimeError` so `_call_with_retry` treats them as
+transient failures and retries (up to `llm.max_retries` times, default 3) before
+propagating to the caller.  This is the correct behaviour — an empty response is
+almost certainly a transient API issue, not a permanent misconfiguration.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/content.py` | `_call_anthropic`: empty-content guard before `message.content[0].text`; `_call_openai`: empty-choices guard + None-content guard before returning |
+| `tests/test_content.py` | +3 tests: one per new guard |
+
+**New tests (+3 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_content.py` | `test_call_anthropic_empty_content_list_raises_runtime_error` | Empty `message.content` → `RuntimeError("empty content list")` not `IndexError` |
+| `tests/test_content.py` | `test_call_openai_empty_choices_raises_runtime_error` | Empty `response.choices` → `RuntimeError("empty choices list")` not `IndexError` |
+| `tests/test_content.py` | `test_call_openai_none_content_raises_runtime_error` | `choices[0].message.content = None` → `RuntimeError("no text content")` not `AttributeError` |
+
+Total: **424/424 tests** (was 421).
 
 ---
 

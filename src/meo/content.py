@@ -330,6 +330,8 @@ def _call_anthropic(
             raise RuntimeError("Anthropic API rate limit reached. Retry later.") from exc
         except anthropic.APIError as exc:
             raise RuntimeError(f"Anthropic API error: {exc}") from exc
+        if not message.content:
+            raise RuntimeError("Anthropic returned an empty content list")
         return message.content[0].text
 
     return _call_with_retry(_attempt, max_attempts)
@@ -376,6 +378,14 @@ def _call_openai(
             raise RuntimeError("OpenAI API rate limit reached. Retry later.") from exc
         except openai.APIError as exc:
             raise RuntimeError(f"OpenAI API error: {exc}") from exc
-        return response.choices[0].message.content
+        if not response.choices:
+            raise RuntimeError("OpenAI returned an empty choices list")
+        content = response.choices[0].message.content
+        if content is None:
+            raise RuntimeError(
+                "OpenAI returned no text content "
+                "(finish_reason may be 'tool_calls' — check model and prompt)"
+            )
+        return content
 
     return _call_with_retry(_attempt, max_attempts)

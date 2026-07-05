@@ -733,3 +733,90 @@ def test_call_openai_includes_system_message_when_system_given(monkeypatch):
         assert messages[1]["role"] == "user"
     finally:
         sys.modules.pop("openai", None)
+
+
+def test_call_anthropic_empty_content_list_raises_runtime_error(monkeypatch):
+    """Anthropic returning an empty content list must raise RuntimeError (not IndexError).
+
+    This can happen if the API returns a message with no content blocks — for example
+    if the response was filtered.  Without the guard, message.content[0] would raise
+    IndexError, which is not caught by _call_with_retry and produces a confusing traceback.
+    """
+    import sys, types
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    fake_msg = MagicMock()
+    fake_msg.content = []  # empty list — the edge case under test
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_msg
+
+    mod = types.ModuleType("anthropic")
+    mod.Anthropic = MagicMock(return_value=fake_client)
+    mod.RateLimitError = Exception
+    mod.APIError = Exception
+    sys.modules["anthropic"] = mod
+
+    try:
+        with pytest.raises(RuntimeError, match="empty content list"):
+            content._call_anthropic("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("anthropic", None)
+
+
+def test_call_openai_empty_choices_raises_runtime_error(monkeypatch):
+    """OpenAI returning an empty choices list must raise RuntimeError (not IndexError).
+
+    Defensive guard against unexpected API responses.
+    """
+    import sys, types
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    fake_response = MagicMock()
+    fake_response.choices = []  # empty list — the edge case under test
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+
+    fake_openai = types.ModuleType("openai")
+    fake_openai.OpenAI = MagicMock(return_value=fake_client)
+    fake_openai.RateLimitError = Exception
+    fake_openai.APIError = Exception
+    sys.modules["openai"] = fake_openai
+
+    try:
+        with pytest.raises(RuntimeError, match="empty choices list"):
+            content._call_openai("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("openai", None)
+
+
+def test_call_openai_none_content_raises_runtime_error(monkeypatch):
+    """OpenAI returning None message content must raise RuntimeError (not AttributeError).
+
+    content=None is returned when finish_reason is 'tool_calls'.  Without the guard,
+    the caller's text.strip() raises AttributeError, which is not caught by
+    _call_with_retry and produces a confusing traceback.
+    """
+    import sys, types
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    fake_choice = MagicMock()
+    fake_choice.message.content = None  # the edge case under test
+    fake_response = MagicMock()
+    fake_response.choices = [fake_choice]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+
+    fake_openai = types.ModuleType("openai")
+    fake_openai.OpenAI = MagicMock(return_value=fake_client)
+    fake_openai.RateLimitError = Exception
+    fake_openai.APIError = Exception
+    sys.modules["openai"] = fake_openai
+
+    try:
+        with pytest.raises(RuntimeError, match="no text content"):
+            content._call_openai("prompt", {"max_retries": 1})
+    finally:
+        sys.modules.pop("openai", None)
