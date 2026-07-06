@@ -98,9 +98,11 @@ def validate_stores(stores_data: dict[str, Any]) -> list[str]:
                     f"stores.yaml: [{key}].call_to_action.action_type '{action_type}' is invalid. "
                     f"Supported: {sorted(_SUPPORTED_CTA_TYPES)}"
                 )
-            if "url" not in cta:
+            # An empty string url silently disables the CTA button in posts.py
+            # without any warning — detect it here so the operator gets a clear error.
+            if not cta.get("url"):
                 errors.append(
-                    f"stores.yaml: [{key}].call_to_action missing required field: url"
+                    f"stores.yaml: [{key}].call_to_action.url is missing or empty"
                 )
 
     return errors
@@ -132,6 +134,14 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
             )
         if not llm.get("model_id"):
             errors.append("content.yaml: llm.model_id is missing")
+        max_retries = llm.get("max_retries")
+        if max_retries is not None and (
+            not isinstance(max_retries, int) or max_retries < 1
+        ):
+            errors.append(
+                "content.yaml: llm.max_retries must be an integer >= 1 "
+                "(omit to use the default of 3)"
+            )
 
     if not isinstance(content_data.get("industry_tones"), dict):
         errors.append("content.yaml: missing required section 'industry_tones'")

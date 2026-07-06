@@ -162,6 +162,18 @@ def test_validate_stores_cta_missing_url():
     assert any("url" in e for e in errors)
 
 
+def test_validate_stores_cta_empty_url_is_invalid():
+    """url: '' silently disables the CTA button in posts.py — catch it here."""
+    stores = {
+        "s": {
+            **_VALID_STORES["store_a"],
+            "call_to_action": {"action_type": "BOOK", "url": ""},  # empty string
+        }
+    }
+    errors = v.validate_stores(stores)
+    assert any("url" in e for e in errors)
+
+
 def test_validate_stores_cta_missing_action_type():
     stores = {
         "s": {
@@ -237,6 +249,45 @@ def test_validate_content_missing_llm_model_id_field():
     }
     errors = v.validate_content(content)
     assert any("llm.model_id is missing" in e for e in errors)
+
+
+def test_validate_content_max_retries_zero_is_invalid():
+    """max_retries: 0 causes _call_with_retry to run zero iterations and hit the
+    safety guard — catch it at validation time with a clear error message."""
+    content = {
+        **_VALID_CONTENT,
+        "llm": {**_VALID_CONTENT["llm"], "max_retries": 0},
+    }
+    errors = v.validate_content(content)
+    assert any("max_retries" in e for e in errors)
+    assert any(">= 1" in e for e in errors)
+
+
+def test_validate_content_max_retries_negative_is_invalid():
+    content = {
+        **_VALID_CONTENT,
+        "llm": {**_VALID_CONTENT["llm"], "max_retries": -1},
+    }
+    errors = v.validate_content(content)
+    assert any("max_retries" in e for e in errors)
+
+
+def test_validate_content_max_retries_one_is_valid():
+    """min allowed value: exactly 1 (no retry, just one attempt)."""
+    content = {
+        **_VALID_CONTENT,
+        "llm": {**_VALID_CONTENT["llm"], "max_retries": 1},
+    }
+    assert v.validate_content(content) == []
+
+
+def test_validate_content_max_retries_absent_uses_runtime_default():
+    """Omitting max_retries is valid — the default of 3 is applied at runtime."""
+    content = {
+        **_VALID_CONTENT,
+        "llm": {k: val for k, val in _VALID_CONTENT["llm"].items() if k != "max_retries"},
+    }
+    assert v.validate_content(content) == []
 
 
 # ---------------------------------------------------------------------------

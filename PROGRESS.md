@@ -1,6 +1,97 @@
 # PROGRESS
 
-## Status: All milestones complete — 424/424 tests green (98% coverage)
+## Status: All milestones complete — 429/429 tests green (98% coverage)
+
+---
+
+## Completed this run (run 42)
+
+### Fix: validator rejects `call_to_action.url: ""` and `llm.max_retries: 0` (`src/meo/validator.py`)
+
+**Problem 1 — silent CTA misconfiguration (`call_to_action.url`)**
+
+The validator checked that the `url` key was *present* in a store's
+`call_to_action` block, but not that it was *non-empty*.  The comment template
+in `config/stores.yaml` includes `url: ""` as a placeholder:
+
+```yaml
+# call_to_action:
+#   action_type: "BOOK"
+#   url: ""   # e.g. https://yoursite.com/osaka/book
+```
+
+An operator who uncomments the block but leaves `url: ""` would pass validation.
+In `posts.py`, `cta_conf.get("url")` evaluates to falsy, so `call_to_action`
+is set to `None` and no CTA button is attached — silently, with no warning.
+The operator would not discover the misconfiguration until manually inspecting
+the published post on GBP.
+
+**Problem 2 — cryptic RuntimeError on `llm.max_retries: 0`**
+
+`_call_with_retry` in `content.py` runs `for attempt in range(1, max_attempts + 1)`.
+When `max_attempts = 0`, the loop body never executes and control falls through to
+the safety guard:
+
+```python
+raise RuntimeError("retry loop exited without return or raise")  # unreachable
+```
+
+This guard was designed to catch future bugs in the loop logic — it was never
+meant to be a user-facing error.  But if `max_retries: 0` is set in
+`content.yaml` (e.g. by accidentally deleting the value), every LLM call fails
+with this cryptic message instead of a clear config error surfaced at startup.
+
+**Fix**: Two targeted checks added to `validate_content()` and `validate_stores()`:
+
+```python
+# validator.py — validate_stores():
+# Before (presence-only check):
+if "url" not in cta:
+    errors.append(f"... missing required field: url")
+
+# After (presence + non-empty):
+if not cta.get("url"):
+    errors.append(f"... .call_to_action.url is missing or empty")
+
+# validator.py — validate_content():
+# New check inside the `llm` section:
+max_retries = llm.get("max_retries")
+if max_retries is not None and (
+    not isinstance(max_retries, int) or max_retries < 1
+):
+    errors.append(
+        "content.yaml: llm.max_retries must be an integer >= 1 "
+        "(omit to use the default of 3)"
+    )
+```
+
+Both errors are now surfaced at startup (before any API call is made) via
+`validate_all()` in `main.py` and the CI `Validate config structure` step.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/validator.py` | `validate_stores()`: `url` check extended to catch empty string; `validate_content()`: new `max_retries >= 1` guard inside `llm` block |
+| `tests/test_validator.py` | +6 tests (see below) |
+
+**New tests (+6 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_validator.py` | `test_validate_stores_cta_empty_url_is_invalid` | `url: ""` → validator error containing "url" |
+| `tests/test_validator.py` | `test_validate_content_max_retries_zero_is_invalid` | `max_retries: 0` → error mentioning "max_retries" and ">= 1" |
+| `tests/test_validator.py` | `test_validate_content_max_retries_negative_is_invalid` | `max_retries: -1` → error mentioning "max_retries" |
+| `tests/test_validator.py` | `test_validate_content_max_retries_one_is_valid` | `max_retries: 1` → no error (min valid value) |
+| `tests/test_validator.py` | `test_validate_content_max_retries_absent_uses_runtime_default` | `max_retries` key absent → no error (default 3 applied at runtime) |
+
+**Note on the existing `test_validate_stores_cta_missing_url` test**: The
+existing test passes `{"action_type": "BOOK"}` (no `url` key at all).  `cta.get("url")`
+returns `None`, which is falsy — the new check catches both the absent-key and
+empty-string cases with the same `if not cta.get("url"):` expression. The existing
+test still passes unchanged.
+
+Total: **429/429 tests** (was 424).
 
 ---
 
