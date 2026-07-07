@@ -510,6 +510,36 @@ def test_generate_reply_logs_warning_when_banned_word_found(caplog):
     assert any("激安" in r.message for r in caplog.records)
 
 
+def test_generate_post_omits_banned_words_line_when_list_is_empty():
+    """禁止ワード line must be absent from the prompt when banned_words is [].
+
+    Sending "禁止ワード: " (empty value) implies restrictions exist but leaves the
+    field blank, which is misleading to the LLM.  When the list is empty, the line
+    must be omitted entirely from the user prompt.
+    """
+    real_conf = cfg.content()
+    no_banned_conf = {**real_conf, "banned_words": []}
+    with patch.object(cfg, "content", return_value=no_banned_conf), \
+         _mock_llm("テスト投稿") as mock_llm:
+        content.generate_post(_STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "禁止ワード" not in user_prompt
+
+
+def test_generate_reply_omits_banned_words_line_when_list_is_empty():
+    """禁止ワード line must be absent from the reply prompt when banned_words is [].
+
+    Same logic as the post variant above but for generate_reply().
+    """
+    real_conf = cfg.content()
+    no_banned_conf = {**real_conf, "banned_words": []}
+    with patch.object(cfg, "content", return_value=no_banned_conf), \
+         _mock_llm("ありがとうございます") as mock_llm:
+        content.generate_reply(_REVIEW, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "禁止ワード" not in user_prompt
+
+
 # ---------------------------------------------------------------------------
 # Per-store max_chars override tests
 # ---------------------------------------------------------------------------

@@ -76,7 +76,7 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     conf = cfg.content()
     industry = store.get("industry", "beauty_salon")
     tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
-    banned = ", ".join(conf.get("banned_words", []))
+    banned_words_list = conf.get("banned_words", [])
     max_chars = cfg.effective_defaults(store)["max_post_chars"]
 
     system = (
@@ -88,43 +88,36 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     date_context = _jst_date_context()
 
     if forced_theme:
-        user = (
-            f"店舗名: {store['name']}\n"
-            f"現在の日付・季節: {date_context}\n"
-            f"トーン: {tone_profile['tone']}\n"
-            f"テーマ: {forced_theme}\n"
-            f"禁止ワード: {banned}\n"
-            f"条件:\n"
-            f"- 日本語で書く\n"
-            f"- {max_chars}文字以内\n"
-            f"- ハッシュタグは不要\n"
-            f"- お客様への呼びかけを含める\n"
-            f"- 季節感を自然に反映させる\n"
-            f"- 指定されたテーマで自然な投稿文を1つだけ出力する\n"
-            f"投稿文のみを出力してください（説明文不要）。"
-        )
+        theme_line = f"テーマ: {forced_theme}"
+        instruction_line = "- 指定されたテーマで自然な投稿文を1つだけ出力する"
     else:
-        user = (
-            f"店舗名: {store['name']}\n"
-            f"現在の日付・季節: {date_context}\n"
-            f"トーン: {tone_profile['tone']}\n"
-            f"テーマ候補: {', '.join(tone_profile['themes'])}\n"
-            f"禁止ワード: {banned}\n"
-            f"条件:\n"
-            f"- 日本語で書く\n"
-            f"- {max_chars}文字以内\n"
-            f"- ハッシュタグは不要\n"
-            f"- お客様への呼びかけを含める\n"
-            f"- 季節感を自然に反映させる\n"
-            f"- テーマ候補から1つ選び、自然な投稿文を1つだけ出力する\n"
-            f"投稿文のみを出力してください（説明文不要）。"
-        )
+        theme_line = f"テーマ候補: {', '.join(tone_profile['themes'])}"
+        instruction_line = "- テーマ候補から1つ選び、自然な投稿文を1つだけ出力する"
+
+    # Omit the 禁止ワード line entirely when the list is empty — an empty value
+    # ("禁止ワード: ") is misleading and adds no useful signal to the LLM.
+    banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
+    user = (
+        f"店舗名: {store['name']}\n"
+        f"現在の日付・季節: {date_context}\n"
+        f"トーン: {tone_profile['tone']}\n"
+        f"{theme_line}\n"
+        f"{banned_line}"
+        f"条件:\n"
+        f"- 日本語で書く\n"
+        f"- {max_chars}文字以内\n"
+        f"- ハッシュタグは不要\n"
+        f"- お客様への呼びかけを含める\n"
+        f"- 季節感を自然に反映させる\n"
+        f"{instruction_line}\n"
+        f"投稿文のみを出力してください（説明文不要）。"
+    )
 
     text = _call_llm(user, conf["llm"], system=system)
     text = text.strip()
     if len(text) > max_chars:
         text = text[:max_chars]
-    found = _check_banned_words(text, conf.get("banned_words", []))
+    found = _check_banned_words(text, banned_words_list)
     if found:
         logger.warning(
             "[%s] Generated post contains banned word(s): %s. "
@@ -189,7 +182,7 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     conf = cfg.content()
     industry = store.get("industry", "beauty_salon")
     tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
-    banned = ", ".join(conf.get("banned_words", []))
+    banned_words_list = conf.get("banned_words", [])
     max_chars = cfg.effective_defaults(store)["max_reply_chars"]
 
     raw_name = review.get("reviewer", {}).get("displayName", "")
@@ -209,9 +202,10 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
         f"ブランドのトーン（{tone_profile['tone']}）を守り、日本語で自然な返信を行います。"
         f"返信文のみを出力し、説明文や前置きは一切含めないでください。"
     )
+    banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
     user = (
         f"現在の日付・季節: {date_context}\n"
-        f"禁止ワード: {banned}\n"
+        f"{banned_line}"
         f"レビュアー名: {reviewer_name}\n"
         f"評価: {star_display}\n"
         f"レビュー内容: {comment_text}\n"
@@ -230,7 +224,7 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     text = text.strip()
     if len(text) > max_chars:
         text = text[:max_chars]
-    found = _check_banned_words(text, conf.get("banned_words", []))
+    found = _check_banned_words(text, banned_words_list)
     if found:
         logger.warning(
             "[%s] Generated reply contains banned word(s): %s. "

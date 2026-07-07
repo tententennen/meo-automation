@@ -1,6 +1,118 @@
 # PROGRESS
 
-## Status: All milestones complete — 429/429 tests green (98% coverage)
+## Status: All milestones complete — 431/431 tests green (98% coverage)
+
+---
+
+## Completed this run (run 43)
+
+### Refactor: eliminate duplicate prompt template in `generate_post` and fix empty `banned_words` edge case (`src/meo/content.py`)
+
+**Problem 1 — 30-line prompt duplication in `generate_post`**
+
+`generate_post()` built the user prompt inside an `if forced_theme / else` block.
+The two branches were nearly identical — 13 lines each — differing only in two
+lines (the theme field label and the closing instruction):
+
+```python
+# Before — 30 lines of nearly-identical text:
+if forced_theme:
+    user = (
+        f"店舗名: {store['name']}\n"
+        ...
+        f"テーマ: {forced_theme}\n"          # ← only this line differs
+        ...
+        f"- 指定されたテーマで自然な投稿文を1つだけ出力する\n"   # ← and this
+        ...
+    )
+else:
+    user = (
+        f"店舗名: {store['name']}\n"
+        ...
+        f"テーマ候補: {', '.join(tone_profile['themes'])}\n"    # ← differs
+        ...
+        f"- テーマ候補から1つ選び、自然な投稿文を1つだけ出力する\n"  # ← differs
+        ...
+    )
+```
+
+Any change to the shared parts of the prompt (tone instruction, conditions,
+output format) had to be made in two places — a maintenance hazard that would
+silently produce divergent prompts if one copy was updated and the other was not.
+
+The duplication also pushed `content.py` to 391 lines — 2% below the 400-line
+module cap declared in the project guidelines.
+
+**Problem 2 — empty `"禁止ワード: "` line when `banned_words: []`**
+
+Both `generate_post` and `generate_reply` unconditionally included a
+`禁止ワード: {banned}` line in the user prompt:
+
+```python
+banned = ", ".join(conf.get("banned_words", []))
+...
+f"禁止ワード: {banned}\n"
+```
+
+When `banned_words: []` (an empty list), `banned` evaluates to `""`, and the
+prompt contains the line `"禁止ワード: "` with nothing after it.  Sending an empty
+field to the LLM is misleading — it implies restrictions exist but provides no
+guidance.  The LLM cannot act on it, so the line wastes prompt tokens.
+
+**Fix**
+
+Extracted `theme_line` and `instruction_line` from the `if/else` block, then
+built a single `user` prompt string.  Added a `banned_line` conditional that
+omits the `禁止ワード:` line entirely when the list is empty:
+
+```python
+# After — if/else extracts only what differs (6 lines), one shared prompt build:
+if forced_theme:
+    theme_line = f"テーマ: {forced_theme}"
+    instruction_line = "- 指定されたテーマで自然な投稿文を1つだけ出力する"
+else:
+    theme_line = f"テーマ候補: {', '.join(tone_profile['themes'])}"
+    instruction_line = "- テーマ候補から1つ選び、自然な投稿文を1つだけ出力する"
+
+banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
+user = (
+    f"店舗名: {store['name']}\n"
+    ...
+    f"{theme_line}\n"
+    f"{banned_line}"          # omitted when empty
+    ...
+    f"{instruction_line}\n"
+    ...
+)
+```
+
+The same `banned_line` pattern was applied to `generate_reply`.
+
+In both functions, `conf.get("banned_words", [])` is now stored in
+`banned_words_list` and reused for both prompt building and
+`_check_banned_words()` — previously the list was materialised twice.
+
+**Line count impact:**
+
+| File | Before | After | Δ |
+|---|---|---|---|
+| `src/meo/content.py` | 391 lines | 385 lines | −6 |
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/content.py` | `generate_post`: if/else prompt collapsed into 6-line variable extraction + single `user` build; `banned_words_list` variable replaces `banned`; `banned_line` conditional omits field when list is empty. `generate_reply`: same `banned_line` conditional applied. |
+| `tests/test_content.py` | +2 tests (see below) |
+
+**New tests (+2 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_content.py` | `test_generate_post_omits_banned_words_line_when_list_is_empty` | `banned_words: []` → `"禁止ワード"` absent from `generate_post` user prompt |
+| `tests/test_content.py` | `test_generate_reply_omits_banned_words_line_when_list_is_empty` | `banned_words: []` → `"禁止ワード"` absent from `generate_reply` user prompt |
+
+Total: **431/431 tests** (was 429).
 
 ---
 
