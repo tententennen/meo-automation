@@ -4,6 +4,37 @@
 
 ---
 
+## Completed this run (run 44)
+
+### Feature: `meo-discover-locations` CLI command (`pyproject.toml`, `README.md`)
+
+**Problem**: `discover_locations.py` was the only operator tool with no named CLI
+entry point.  All other tools (`meo-status`, `meo-health`, `meo-validate`, etc.)
+are invocable as `meo-<name>` commands after `pip install -e .`.  The setup step
+that uses `discover_locations` — finding `location_id` values for `config/stores.yaml`
+— is the first hands-on step the owner takes after receiving Business Profile API
+approval.  Requiring `python -m meo.tools.discover_locations` instead of
+`meo-discover-locations` was inconsistent and required the owner to remember the
+module path.
+
+**Fix**: Added `meo-discover-locations = "meo.tools.discover_locations:main"` to
+`[project.scripts]` in `pyproject.toml`, making the tool consistent with all other
+`meo-*` commands.  Updated the README CLI tools table and the "Needs human action"
+step 7 in this file to reference the new command.  No code changes — the
+`discover_locations.py` module and its 9 tests are unchanged.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `pyproject.toml` | `meo-discover-locations` added to `[project.scripts]` |
+| `README.md` | `meo-discover-locations` added to CLI tools table with description; `meo-discover-locations` added to bash usage examples |
+| `PROGRESS.md` | "Needs human action" step 7 updated to use CLI command with example |
+
+**Tests:** No new tests — no code logic changed. All 431/431 pass unchanged.
+
+---
+
 ## Completed this run (run 43)
 
 ### Refactor: eliminate duplicate prompt template in `generate_post` and fix empty `banned_words` edge case (`src/meo/content.py`)
@@ -1057,8 +1088,12 @@ one-time owner actions:
    - `SLACK_WEBHOOK_URL` *(optional — Slack run-summary notifications)*
 
 7. **Fill in `config/stores.yaml`** — replace the `TODO` placeholders for
-   `location_id` and `drive_folder_id`.  Use `python -m meo.tools.discover_locations`
-   to find your location IDs once the Business Profile API is approved.
+   `location_id` and `drive_folder_id`.  Use `meo-discover-locations`
+   to find your location IDs once the Business Profile API is approved:
+   ```bash
+   meo-discover-locations
+   ```
+   This prints a ready-to-paste YAML block for each location.
 
 Once secrets are added, the next scheduled run (0:00 UTC / 9:00 JST) will
 activate automatically.
