@@ -1,5 +1,7 @@
 """Tests for the meo-report CLI (tools/report.py)."""
 
+import re
+from datetime import datetime, timezone
 from unittest.mock import patch
 import pytest
 
@@ -37,6 +39,29 @@ def _patch_history(posts=None, replies=None):
 # ---------------------------------------------------------------------------
 # run_report() unit tests
 # ---------------------------------------------------------------------------
+
+def test_run_report_header_includes_jst_timestamp():
+    """Report header 'Generated:' should show a JST timestamp in YYYY-MM-DD HH:MM JST format.
+
+    The runner executes in UTC (GitHub Actions), so using datetime.now(tz=_JST) is
+    important: the Japanese owner reads the report in JST and a UTC timestamp would
+    be off by 9 hours, making it look like the report was generated yesterday or late
+    at night.
+    """
+    from zoneinfo import ZoneInfo
+    # 2026-07-11 00:00 UTC = 09:00 JST
+    utc_midnight = datetime(2026, 7, 11, 0, 0, 0, tzinfo=timezone.utc)
+    jst = ZoneInfo("Asia/Tokyo")
+    jst_9am = utc_midnight.astimezone(jst)
+
+    post_p, reply_p = _patch_history()
+    with post_p, reply_p, patch("meo.tools.report.datetime") as mock_dt:
+        mock_dt.now.return_value = jst_9am
+        text, code = run_report()
+
+    assert code == 0
+    assert "Generated: 2026-07-11 09:00 JST" in text
+
 
 def test_run_report_contains_store_names():
     """Report text should contain all store names."""

@@ -1,6 +1,76 @@
 # PROGRESS
 
-## Status: All milestones complete — 431/431 tests green (98% coverage)
+## Status: All milestones complete — 432/432 tests green (98% coverage)
+
+---
+
+## Completed this run (run 45)
+
+### Fix: `meo-report` header timestamp now shows JST instead of UTC (`src/meo/tools/report.py`)
+
+**Problem**: `run_report()` used `datetime.now()` (no timezone) to build the
+`Generated:` line in the report header.  In the GitHub Actions runner — which
+operates in UTC — this produced timestamps like:
+
+```
+Generated: 2026-07-11 00:00
+```
+
+The owner reads the report in JST (UTC+9), so the header appeared to show the
+report was generated "yesterday" or "in the early morning" when it was actually
+produced during the 9:00 AM JST scheduled run.  Every other date/time value in
+the codebase (`state.py`, `status.py`) already uses `ZoneInfo("Asia/Tokyo")` for
+exactly this reason — `report.py` had been overlooked.
+
+**Fix**: Added `_JST = ZoneInfo("Asia/Tokyo")` (same pattern as `state.py` and
+`status.py`) and changed the format call to include the timezone label:
+
+```python
+# Before:
+generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+# After:
+generated_at = datetime.now(tz=_JST).strftime("%Y-%m-%d %H:%M JST")
+```
+
+The ` JST` suffix makes the timezone explicit in the report output, so if the
+file is ever shared outside Japan or stored without context, the time zone is
+self-documenting.
+
+### Fix: `# pragma: no cover` on unreachable guard in `_call_with_retry` (`src/meo/content.py`)
+
+**Problem**: The safety guard `raise RuntimeError("retry loop exited without
+return or raise")` on the last line of `_call_with_retry` was the only remaining
+uncovered line in `content.py`, keeping it at 99% instead of 100%.  The comment
+already said `# unreachable` but did not exclude the line from the coverage report.
+
+This is a genuine unreachable path (the loop always returns or re-raises before
+reaching it), not a missing test — the `# unreachable` comment already explains
+the intent.  Adding `# pragma: no cover` is the standard way to tell `coverage.py`
+that a line is excluded by design, not by oversight.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/report.py` | `from zoneinfo import ZoneInfo` added; `_JST = ZoneInfo("Asia/Tokyo")` added; `datetime.now()` → `datetime.now(tz=_JST)` with ` JST` suffix in format string |
+| `src/meo/content.py` | `# unreachable` → `# pragma: no cover` on the safety guard |
+| `tests/test_report.py` | `import re`, `from datetime import datetime, timezone` added; +1 test: `test_run_report_header_includes_jst_timestamp` |
+
+**New test (+1 test):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_report.py` | `test_run_report_header_includes_jst_timestamp` | `datetime.now` mocked to 2026-07-11 00:00 UTC → report header shows "2026-07-11 09:00 JST" (UTC+9 shift verified) |
+
+**Coverage change:**
+
+| Module | Before | After |
+|---|---|---|
+| `content.py` | 99% (1 miss) | **100%** (0 miss) |
+| **Total** | 98% (36 miss / 1514 stmts) | 98% (35 miss / 1515 stmts) |
+
+Total: **432/432 tests** (was 431).
 
 ---
 

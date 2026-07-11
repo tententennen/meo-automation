@@ -13,6 +13,9 @@ import argparse
 import sys
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
+
+_JST = ZoneInfo("Asia/Tokyo")
 
 try:
     from dotenv import load_dotenv
@@ -96,7 +99,7 @@ def run_report(store_filter: str | None = None) -> tuple[str, int]:
             known = ", ".join(s["key"] for s in cfg.store_list())
             return f"Unknown store key: '{store_filter}'. Known keys: {known}", 1
 
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = datetime.now(tz=_JST).strftime("%Y-%m-%d %H:%M JST")
     header_lines = [
         "MEO Automation — Content History Report",
         f"Generated: {generated_at}",

@@ -260,7 +260,7 @@ def _call_with_retry(fn, max_attempts: int = 3, *, base_delay: float = 2.0) -> s
                 attempt, max_attempts, exc, delay,
             )
             time.sleep(delay)
-    raise RuntimeError("retry loop exited without return or raise")  # unreachable
+    raise RuntimeError("retry loop exited without return or raise")  # pragma: no cover
 
 
 def _call_llm(prompt: str, llm_conf: dict[str, Any], *, system: str | None = None) -> str:
