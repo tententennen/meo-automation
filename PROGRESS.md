@@ -1,6 +1,76 @@
 # PROGRESS
 
-## Status: All milestones complete — 432/432 tests green (98% coverage)
+## Status: All milestones complete — 434/434 tests green (98% coverage)
+
+---
+
+## Completed this run (run 46)
+
+### Fix: post exception in Slack notification was silent — footer incorrectly showed ✅ (`src/meo/notify.py`)
+
+**Problem**: When a store's post step raised an uncaught exception, `main.py`
+stored `{"error": str(exc)}` in `store_results["post"]` and set its own
+`had_error = True` (so the *process* exits with code 1 correctly).  However,
+`_format_message()` in `notify.py` never inspected `post.get("error")`:
+
+```python
+# Before — the "error" key was consumed as the status string, silently:
+status = post.get("status", post.get("error", "—"))
+post_part = f"post: {status}"
+```
+
+Two consequences:
+
+1. **Missing visual indicator**: The Slack line showed `"post: API error: 403
+   Forbidden"` instead of `"post: ❌ API error: 403 Forbidden"`.  At a glance,
+   this looks like a status word, not an error — the owner had to read carefully
+   to notice the problem.
+
+2. **Wrong footer**: `had_error` in `_format_message()` was only set when
+   `r.get("error")` (store-level unconfigured-location error) or review errors
+   were detected — never when a post failed.  So the message footer always
+   showed "✅ All stores processed." even after a post exception.  The owner
+   would see a green tick in Slack while the GitHub Actions job was red.
+
+This mismatch was hard to spot because the tests for `test_format_review_errors_shown`
+(correctly tested review errors → "⚠️") and `test_format_store_level_error`
+(correctly tested store-level error → "⚠️") gave false confidence that all error
+paths were covered.  No test exercised the `post = {"error": ...}` shape.
+
+**Fix**: Split the `post` formatting into two branches:
+
+```python
+# After — error and status are handled separately:
+if post.get("error"):
+    post_part = f"post: ❌ {post['error']}"
+    had_error = True                  # ← was missing; now drives the ⚠️ footer
+else:
+    status = post.get("status", "—")
+    theme = post.get("theme", "")
+    post_part = f"post: {status}"
+    if theme:
+        post_part += f" ({theme})"
+```
+
+The `else` branch is identical to the old path for non-error results
+(`"posted"`, `"skipped"`, `"dry_run"`) — no behaviour change on the happy path.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/notify.py` | `_format_message()`: split post result into error/success branches; `had_error = True` when post error present |
+| `tests/test_notify.py` | +2 tests covering the new paths |
+
+**New tests (+2 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_notify.py` | `test_format_post_exception_shows_error_indicator` | `post={"error": "403 Forbidden"}` → `"❌"` and error text in message |
+| `tests/test_notify.py` | `test_format_post_exception_triggers_warning_footer` | `post={"error": ...}` → `"⚠️"` in footer, `"✅"` absent |
+
+**Coverage change:** `notify.py` was already at 100%; the new lines are covered by
+the new tests.  Net total: **434/434 tests** (was 432).
 
 ---
 

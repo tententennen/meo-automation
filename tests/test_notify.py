@@ -182,6 +182,34 @@ def test_format_falls_back_to_key_when_store_name_absent():
     assert "mybear_studio_kyoto" in msg
 
 
+def test_format_post_exception_shows_error_indicator():
+    """A caught post exception stored as {"error": ...} must display ❌ in the message."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"error": "API error: 403 Forbidden"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "❌" in msg
+    assert "403 Forbidden" in msg
+
+
+def test_format_post_exception_triggers_warning_footer():
+    """When a post fails with an exception, the footer must warn (not show ✅)."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"error": "API error: 403 Forbidden"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "⚠️" in msg
+    assert "✅" not in msg
+
+
 def test_payload_contains_store_key(monkeypatch):
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
     mock_resp = MagicMock()

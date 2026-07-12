@@ -64,11 +64,15 @@ def _format_message(results: list[dict[str, Any]], *, dry_run: bool) -> str:
 
         post = r.get("post", {})
         if post:
-            status = post.get("status", post.get("error", "—"))
-            theme = post.get("theme", "")
-            post_part = f"post: {status}"
-            if theme:
-                post_part += f" ({theme})"
+            if post.get("error"):
+                post_part = f"post: ❌ {post['error']}"
+                had_error = True
+            else:
+                status = post.get("status", "—")
+                theme = post.get("theme", "")
+                post_part = f"post: {status}"
+                if theme:
+                    post_part += f" ({theme})"
             parts.append(post_part)
 
         reviews = r.get("reviews", {})
