@@ -210,6 +210,34 @@ def test_format_post_exception_triggers_warning_footer():
     assert "✅" not in msg
 
 
+def test_format_reviews_exception_shows_error_indicator():
+    """A caught reviews exception stored as {"error": ...} must display ❌ in the message."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"error": "API error: 503 Service Unavailable"},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "❌" in msg
+    assert "503 Service Unavailable" in msg
+
+
+def test_format_reviews_exception_triggers_warning_footer():
+    """When reviews fail with an exception, the footer must warn (not show ✅)."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"error": "API error: 503 Service Unavailable"},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "⚠️" in msg
+    assert "✅" not in msg
+
+
 def test_payload_contains_store_key(monkeypatch):
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
     mock_resp = MagicMock()
