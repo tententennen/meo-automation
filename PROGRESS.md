@@ -1,8 +1,77 @@
 # PROGRESS
 
-## Status: All milestones complete — 434/434 tests green (98% coverage)
+## Status: All milestones complete — 436/436 tests green (98% coverage)
 
 ---
+
+## Completed this run (run 47)
+
+### Fix: reviews exception in Slack notification was silent — footer incorrectly showed ✅ (`src/meo/notify.py`)
+
+**Problem**: When a store's reviews step raised an uncaught exception, `main.py`
+stored `{"error": str(exc)}` in `store_results["reviews"]` and set `had_error = True`
+(so the *process* exits with code 1 correctly).  However, `_format_message()` in
+`notify.py` never inspected `reviews.get("error")`:
+
+```python
+# Before — "error" key was never checked; only the per-review errors list:
+rev_errors = reviews.get("errors", [])
+rev_part = f"replies: {replied}"  # → "replies: 0" — no error indicator!
+if rev_errors:
+    ...
+    had_error = True  # never reached when exception path taken
+```
+
+Two consequences:
+
+1. **Missing visual indicator**: The Slack line showed `"replies: 0"` with no `❌`
+   prefix.  At a glance this looks like a successful run with no reviews to reply to —
+   not a complete reviews failure.
+
+2. **Wrong footer**: `had_error` in `_format_message()` was never set from the reviews
+   exception path, so the footer always showed `"✅ All stores processed."` even after a
+   reviews exception.  The owner would see a green tick in Slack while the GitHub Actions
+   job was red.
+
+This is the exact same bug pattern as the post exception fix from run 46 — but on the
+reviews side.  Run 46 had tests covering `post={"error": ...}` but no test for
+`reviews={"error": ...}`, which is why this path was not caught at the time.
+
+**Fix**: Split the reviews block into two branches (same pattern as the post fix):
+
+```python
+# After — error and success are handled separately:
+if reviews.get("error"):
+    parts.append(f"replies: ❌ {reviews['error']}")
+    had_error = True                  # ← was missing; now drives the ⚠️ footer
+else:
+    replied = reviews.get("replied", 0)
+    ...                               # unchanged success path
+```
+
+The `else` branch is identical to the old path for non-error results — no behaviour
+change on the happy path.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/notify.py` | `_format_message()`: split reviews result into error/success branches; `had_error = True` when reviews exception present |
+| `tests/test_notify.py` | +2 tests covering the new paths |
+
+**New tests (+2 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_notify.py` | `test_format_reviews_exception_shows_error_indicator` | `reviews={"error": "503 Service Unavailable"}` → `"❌"` and error text in message |
+| `tests/test_notify.py` | `test_format_reviews_exception_triggers_warning_footer` | `reviews={"error": ...}` → `"⚠️"` in footer, `"✅"` absent |
+
+**Coverage change:** `notify.py` was already at 100%; the new lines are covered by
+the new tests.  Net total: **436/436 tests** (was 434).
+
+---
+
+
 
 ## Completed this run (run 46)
 
