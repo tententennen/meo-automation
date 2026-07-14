@@ -146,6 +146,14 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
     if not isinstance(content_data.get("industry_tones"), dict):
         errors.append("content.yaml: missing required section 'industry_tones'")
 
+    banned_words = content_data.get("banned_words")
+    if banned_words is not None and not isinstance(banned_words, list):
+        errors.append(
+            f"content.yaml: banned_words must be a YAML list (e.g. - \"激安\"), "
+            f"got {type(banned_words).__name__}. "
+            "A bare string would be iterated character-by-character in LLM prompts."
+        )
+
     return errors
 
 

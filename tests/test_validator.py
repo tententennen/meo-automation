@@ -290,6 +290,33 @@ def test_validate_content_max_retries_absent_uses_runtime_default():
     assert v.validate_content(content) == []
 
 
+def test_validate_content_banned_words_as_string_is_invalid():
+    """banned_words must be a list.
+
+    A bare string (e.g. banned_words: "激安") would be iterated character-by-
+    character in content.py — _check_banned_words() would match single kanji
+    that appear in almost every Japanese text, producing spurious warnings on
+    every generated post.  Catch the misconfiguration at startup.
+    """
+    content = {**_VALID_CONTENT, "banned_words": "激安"}
+    errors = v.validate_content(content)
+    assert any("banned_words" in e for e in errors)
+    assert any("list" in e for e in errors)
+
+
+def test_validate_content_banned_words_absent_is_valid():
+    """banned_words is optional — its absence must not cause an error."""
+    content = {k: val for k, val in _VALID_CONTENT.items() if k != "banned_words"}
+    assert v.validate_content(content) == []
+
+
+def test_validate_content_banned_words_as_dict_is_invalid():
+    """Any non-list value (dict, int, bool) must be rejected."""
+    content = {**_VALID_CONTENT, "banned_words": {"word": "激安"}}
+    errors = v.validate_content(content)
+    assert any("banned_words" in e for e in errors)
+
+
 # ---------------------------------------------------------------------------
 # validate_all
 # ---------------------------------------------------------------------------

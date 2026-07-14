@@ -1,8 +1,80 @@
 # PROGRESS
 
-## Status: All milestones complete — 436/436 tests green (98% coverage)
+## Status: All milestones complete — 439/439 tests green (98% coverage)
 
 ---
+
+## Completed this run (run 48)
+
+### Fix: validator rejects `banned_words` as a non-list (`src/meo/validator.py`)
+
+**Problem**: `validate_content()` in `validator.py` checked the `defaults`,
+`llm`, and `industry_tones` sections for type and completeness, but never
+validated that `banned_words` is a list.
+
+If an operator writes `banned_words: "激安"` (a bare YAML string instead of
+a list item) in `config/content.yaml`, the validator accepted it silently.
+The effect downstream in `content.py`:
+
+1. **Wrong LLM prompt** — `', '.join("激安")` iterates over characters and
+   produces `"激, 安"` rather than `"激安"`.  The LLM is told to avoid the
+   single kanji `激` and `安` rather than the compound word, giving it no
+   useful guidance.
+
+2. **Spurious banned-word warnings on every run** — `_check_banned_words(text, "激安")`
+   iterates over the characters `'激'` and `'安'`.  These single kanji appear
+   in almost every Japanese sentence, so every generated post and reply would
+   trigger a WARNING log line claiming banned words were found, even though
+   the content was completely acceptable.  Over time this would train the
+   operator to ignore the warning, defeating its purpose.
+
+The bug was not reachable in normal usage (the YAML list syntax
+`- "激安"` is natural and the existing config file shows the correct format),
+but it was a latent trap for a first-time operator editing the file.
+
+**Fix**: Added a `banned_words` type guard in `validate_content()`:
+
+```python
+# After the industry_tones check:
+banned_words = content_data.get("banned_words")
+if banned_words is not None and not isinstance(banned_words, list):
+    errors.append(
+        f"content.yaml: banned_words must be a YAML list (e.g. - \"激安\"), "
+        f"got {type(banned_words).__name__}. "
+        "A bare string would be iterated character-by-character in LLM prompts."
+    )
+```
+
+The check only fires when `banned_words` is present and is not a list —
+omitting the key entirely remains valid (defaults to `[]` at runtime).
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/validator.py` | `validate_content()`: `banned_words` non-list guard added after `industry_tones` check |
+| `tests/test_validator.py` | +3 tests (see below) |
+
+**New tests (+3 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_validator.py` | `test_validate_content_banned_words_as_string_is_invalid` | `banned_words: "激安"` (string) → error mentioning "banned_words" and "list" |
+| `tests/test_validator.py` | `test_validate_content_banned_words_absent_is_valid` | `banned_words` key absent → no error (optional field) |
+| `tests/test_validator.py` | `test_validate_content_banned_words_as_dict_is_invalid` | `banned_words: {word: 激安}` (dict) → error mentioning "banned_words" |
+
+**Coverage change:**
+
+| Module | Before | After |
+|---|---|---|
+| `validator.py` | 100% (new lines) | **100%** |
+| **Total** | 98% (35 miss / 1521 stmts) | 98% (35 miss / 1524 stmts) |
+
+Total: **439/439 tests** (was 436).
+
+---
+
+
 
 ## Completed this run (run 47)
 
