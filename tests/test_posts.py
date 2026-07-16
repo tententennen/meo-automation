@@ -165,6 +165,34 @@ def test_no_image_posts_without_photo():
     assert result["status"] == "posted"
 
 
+def test_todo_drive_folder_id_skips_drive_api_call():
+    """When drive_folder_id is still the TODO placeholder, the Drive API must not be called.
+
+    A TODO folder ID would produce a misleading Drive API error in the logs; the real
+    cause is unconfigured config, not a Drive API problem.  The post should still go out
+    (without a photo), and the Drive client must never be touched.
+    """
+    gbp, _, post_text = _make_mocks()
+    drive = MagicMock()
+    store_with_todo = {**_STORE, "drive_folder_id": "TODO: Google Drive folder ID"}
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image") as mock_record_image, \
+         patch("meo.posts.record_theme"):
+        result = run_post_for_store(store_with_todo, gbp, drive, dry_run=False)
+
+    drive.pick_random_image.assert_not_called()
+    drive.download_image.assert_not_called()
+    gbp.create_local_post.assert_called_once()
+    call_media_url = gbp.create_local_post.call_args.args[2]
+    assert call_media_url is None
+    mock_record_image.assert_not_called()
+    assert result["status"] == "posted"
+
+
 def test_already_posted_today_skips_without_api_call():
     """If should_post_today returns False, the post flow is skipped entirely."""
     gbp, drive, post_text = _make_mocks()

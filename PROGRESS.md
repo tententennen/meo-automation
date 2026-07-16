@@ -1,6 +1,87 @@
 # PROGRESS
 
-## Status: All milestones complete — 439/439 tests green (98% coverage)
+## Status: All milestones complete — 440/440 tests green (98% coverage)
+
+---
+
+## Completed this run (run 49)
+
+### Fix: TODO `drive_folder_id` triggered misleading Drive API error instead of clean skip (`src/meo/posts.py`)
+
+**Problem**: When `drive_folder_id` in `stores.yaml` still contained the `"TODO: Google Drive folder ID"`
+placeholder, `run_post_for_store()` passed it directly to `drive.pick_random_image()`.
+The Google Drive API received an invalid folder ID and returned an HTTP error (typically 404
+or 400), which was caught by the `except Exception` block and logged as a WARNING:
+
+```
+WARNING: [the_body_kyoto] Drive image selection failed (404 Not Found: ...); posting without photo.
+```
+
+This warning is misleading: it implies a Drive API connectivity or permissions problem.
+An operator investigating it would spend time checking Drive folder permissions, verifying
+OAuth scopes, or testing the Drive API — none of which are the actual problem.
+The real cause is simply that the config placeholder was never filled in.
+
+`main.py` already logs a clear `WARNING` for this case before the post step runs:
+```
+WARNING: [the_body_kyoto] drive_folder_id is not configured — will post without photo.
+```
+
+So the Drive API call produced a second, harder-to-understand warning for the same
+root cause.  The post correctly went out without a photo regardless — but the log
+contained a spurious API error that looked like an infrastructure problem.
+
+**Fix**: Added an explicit `"TODO" in folder_id` guard in `run_post_for_store()` before
+the `drive.pick_random_image()` call:
+
+```python
+# Before (always calls Drive API regardless of folder_id):
+try:
+    image_meta = drive.pick_random_image(folder_id, recent_ids=recent_image_ids)
+except Exception as exc:
+    # Common cause: drive_folder_id still set to the TODO placeholder
+    logger.warning("[%s] Drive image selection failed (%s); ...", store_key, exc)
+    image_meta = None
+
+# After (skips Drive call entirely when folder is unconfigured):
+if not folder_id or "TODO" in folder_id:
+    logger.debug("[%s] Drive folder not configured; skipping photo attachment.", store_key)
+    image_meta = None
+else:
+    try:
+        image_meta = drive.pick_random_image(folder_id, recent_ids=recent_image_ids)
+    except Exception as exc:
+        logger.warning("[%s] Drive image selection failed (%s); ...", store_key, exc)
+        image_meta = None
+```
+
+The guard matches the existing `"TODO" in location_id` pattern in `main.py` and the
+`"TODO" in folder_id` check in `health.py`, making all three consistent.
+
+The real-error path (`else` branch) is unchanged — if the folder ID is configured but
+the Drive API genuinely fails, the warning still fires correctly.
+
+**Effects:**
+- On an unconfigured run: one clean WARNING from `main.py` instead of one clean + one spurious error.
+- Drive API is not called with an invalid folder ID (saves one API round-trip per store per run).
+- Actual Drive errors (configured folder ID, real API problem) still produce the warning.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/posts.py` | `_image_selection` block: `"TODO" in folder_id` guard added before `drive.pick_random_image()` call; Drive client not touched when folder is unconfigured |
+| `tests/test_posts.py` | +1 test: `test_todo_drive_folder_id_skips_drive_api_call` |
+
+**New test (+1 test):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_posts.py` | `test_todo_drive_folder_id_skips_drive_api_call` | `drive_folder_id = "TODO: ..."` → `drive.pick_random_image` never called; `create_local_post` called with `media_url=None`; result is "posted" |
+
+**Coverage change:** `posts.py` was already at 100%; the new lines are covered by the new test.
+
+Total: **440/440 tests** (was 439).
 
 ---
 
