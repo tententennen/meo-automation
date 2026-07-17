@@ -1,9 +1,9 @@
-"""Tests for meo.auth — get_credentials() and _require_env()."""
+"""Tests for meo.auth — get_credentials(), _require_env(), and run_auth_flow()."""
 import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-from meo.auth import get_credentials, _require_env
+from meo.auth import get_credentials, _require_env, run_auth_flow
 
 
 # ---------------------------------------------------------------------------
@@ -103,3 +103,77 @@ def test_get_credentials_includes_both_scopes(monkeypatch):
     scopes = kwargs["scopes"]
     assert "https://www.googleapis.com/auth/business.manage" in scopes
     assert "https://www.googleapis.com/auth/drive.readonly" in scopes
+
+
+# ---------------------------------------------------------------------------
+# run_auth_flow
+# ---------------------------------------------------------------------------
+
+def _make_flow_mock(refresh_token: str = "rt_test_token") -> tuple[MagicMock, MagicMock]:
+    """Return (mock_flow_class, mock_creds) for patching InstalledAppFlow."""
+    mock_creds = MagicMock()
+    mock_creds.refresh_token = refresh_token
+    mock_flow_instance = MagicMock()
+    mock_flow_instance.run_local_server.return_value = mock_creds
+    mock_flow_class = MagicMock()
+    mock_flow_class.from_client_config.return_value = mock_flow_instance
+    return mock_flow_class, mock_creds
+
+
+def test_run_auth_flow_prints_refresh_token(monkeypatch, capsys):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test_client_id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test_client_secret")
+    mock_flow_class, _ = _make_flow_mock("rt_printed_token")
+    with patch("google_auth_oauthlib.flow.InstalledAppFlow", mock_flow_class):
+        run_auth_flow()
+    out = capsys.readouterr().out
+    assert "rt_printed_token" in out
+    assert "GOOGLE_REFRESH_TOKEN" in out
+
+
+def test_run_auth_flow_passes_both_scopes(monkeypatch):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "csec")
+    mock_flow_class, _ = _make_flow_mock()
+    with patch("google_auth_oauthlib.flow.InstalledAppFlow", mock_flow_class):
+        run_auth_flow()
+    _, kwargs = mock_flow_class.from_client_config.call_args
+    scopes = kwargs["scopes"]
+    assert "https://www.googleapis.com/auth/business.manage" in scopes
+    assert "https://www.googleapis.com/auth/drive.readonly" in scopes
+
+
+def test_run_auth_flow_uses_client_id_and_secret_from_env(monkeypatch):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "my_client_id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "my_client_secret")
+    mock_flow_class, _ = _make_flow_mock()
+    with patch("google_auth_oauthlib.flow.InstalledAppFlow", mock_flow_class):
+        run_auth_flow()
+    args, kwargs = mock_flow_class.from_client_config.call_args
+    client_config = args[0]
+    assert client_config["installed"]["client_id"] == "my_client_id"
+    assert client_config["installed"]["client_secret"] == "my_client_secret"
+
+
+def test_run_auth_flow_raises_when_client_id_missing(monkeypatch):
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "csec")
+    with pytest.raises(EnvironmentError, match="GOOGLE_CLIENT_ID"):
+        run_auth_flow()
+
+
+def test_run_auth_flow_raises_when_client_secret_missing(monkeypatch):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    with pytest.raises(EnvironmentError, match="GOOGLE_CLIENT_SECRET"):
+        run_auth_flow()
+
+
+def test_run_auth_flow_calls_run_local_server_with_port_0(monkeypatch):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "csec")
+    mock_flow_class, _ = _make_flow_mock()
+    mock_flow_instance = mock_flow_class.from_client_config.return_value
+    with patch("google_auth_oauthlib.flow.InstalledAppFlow", mock_flow_class):
+        run_auth_flow()
+    mock_flow_instance.run_local_server.assert_called_once_with(port=0)

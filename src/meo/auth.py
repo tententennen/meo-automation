@@ -61,7 +61,16 @@ def _require_env(name: str) -> str:
 # ---------------------------------------------------------------------------
 # One-time setup helper — run `python -m meo.auth` to get a refresh token.
 # ---------------------------------------------------------------------------
-if __name__ == "__main__":
+
+def run_auth_flow() -> None:
+    """Interactive OAuth consent flow that prints the refresh token to stdout.
+
+    Run once on a developer machine to obtain the refresh token:
+        python -m meo.auth
+
+    Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to be set.
+    Copy the printed refresh token into GOOGLE_REFRESH_TOKEN.
+    """
     from google_auth_oauthlib.flow import InstalledAppFlow
 
     client_id = _require_env("GOOGLE_CLIENT_ID")
@@ -79,3 +88,7 @@ if __name__ == "__main__":
     creds = flow.run_local_server(port=0)
     print("\n=== Copy this refresh token into GOOGLE_REFRESH_TOKEN ===")
     print(creds.refresh_token)
+
+
+if __name__ == "__main__":
+    run_auth_flow()

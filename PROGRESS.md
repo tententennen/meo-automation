@@ -1,6 +1,66 @@
 # PROGRESS
 
-## Status: All milestones complete — 440/440 tests green (98% coverage)
+## Status: All milestones complete — 446/446 tests green (98% coverage)
+
+---
+
+## Completed this run (run 50)
+
+### Refactor: extract `run_auth_flow()` from `auth.py` `__main__` block; add 6 tests
+
+**Problem**: The one-time OAuth setup helper in `auth.py` lived entirely inside a
+`if __name__ == "__main__":` block, making it impossible to test without running the
+script in a subprocess or performing an interactive browser flow.  This left `auth.py`
+at **70% coverage** (8 uncovered lines out of 27 statements) — the worst-covered file
+in the project.
+
+**Fix**: Extracted the `__main__` block into a named function `run_auth_flow()`:
+
+```python
+# Before — untestable:
+if __name__ == "__main__":
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    client_id = _require_env("GOOGLE_CLIENT_ID")
+    ...
+    print(creds.refresh_token)
+
+# After — testable:
+def run_auth_flow() -> None:
+    """Interactive OAuth consent flow that prints the refresh token to stdout."""
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    client_id = _require_env("GOOGLE_CLIENT_ID")
+    ...
+    print(creds.refresh_token)
+
+if __name__ == "__main__":
+    run_auth_flow()
+```
+
+The `__main__` entry point is unchanged — `python -m meo.auth` still works identically.
+The only difference is that the logic is now in a named, importable, mockable function.
+
+**New tests (+6):**
+
+| Test | What it covers |
+|---|---|
+| `test_run_auth_flow_prints_refresh_token` | Printed output contains the refresh token and the env var name |
+| `test_run_auth_flow_passes_both_scopes` | `from_client_config()` receives both GBP + Drive scopes |
+| `test_run_auth_flow_uses_client_id_and_secret_from_env` | `client_config` passed to flow has values from env vars |
+| `test_run_auth_flow_raises_when_client_id_missing` | Missing `GOOGLE_CLIENT_ID` → `EnvironmentError` |
+| `test_run_auth_flow_raises_when_client_secret_missing` | Missing `GOOGLE_CLIENT_SECRET` → `EnvironmentError` |
+| `test_run_auth_flow_calls_run_local_server_with_port_0` | `flow.run_local_server(port=0)` called exactly once |
+
+**Coverage improvement:**
+
+| Module | Before | After |
+|---|---|---|
+| `auth.py` | **70%** (8 uncovered / 27 stmts) | **97%** (1 uncovered / 29 stmts) |
+| Total | 98% (35 miss / 1527 stmts) | **98%** (28 miss / 1529 stmts) |
+
+The remaining uncovered line (94) is `if __name__ == "__main__":` — the standard guard
+line that no unit test framework covers (requires a subprocess); this is expected.
+
+Total: **446/446 tests** (was 440).
 
 ---
 
