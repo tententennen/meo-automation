@@ -90,5 +90,5 @@ def run_auth_flow() -> None:
     print(creds.refresh_token)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     run_auth_flow()

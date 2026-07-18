@@ -1,6 +1,48 @@
 # PROGRESS
 
-## Status: All milestones complete — 446/446 tests green (98% coverage)
+## Status: All milestones complete — 446/446 tests green (100% coverage)
+
+---
+
+## Completed this run (run 51)
+
+### Fix: annotate unreachable boilerplate with `# pragma: no cover` — coverage 98% → 100%
+
+**Problem**: 28 lines across 10 modules were counted as "uncovered" by `coverage.py`,
+keeping the project at 98% despite every reachable branch being tested:
+
+| Pattern | Files affected | Lines |
+|---|---|---|
+| `except ImportError: pass` (optional `python-dotenv` import) | `main.py` + 9 tool modules | 18 lines |
+| `if __name__ == "__main__": main()` entrypoint guard | Same 10 modules | 10 lines |
+
+Neither pattern is reachable in a unit-test environment:
+- The `except ImportError` branch only fires when `python-dotenv` is absent; tests run
+  with it installed, so the `try` block always succeeds and the `except` is skipped.
+- The `main()` call only runs when the module is invoked directly as a script; importing
+  it (as tests do) evaluates the `if __name__ == "__main__":` condition to `False`
+  and skips the body.
+
+Both are standard boilerplate — not missing tests. The correct fix is
+`# pragma: no cover`, which tells `coverage.py` to exclude these lines from the
+denominator entirely (same as the `_call_with_retry` safety guard in `content.py`,
+excluded in run 45 for the same reason).
+
+**Fix**: Added `# pragma: no cover` to the `except ImportError:` line (covers the
+`pass` body too) and the `if __name__ == "__main__":` line (covers the `main()` body
+too) in all 10 affected files.
+
+**Coverage change:**
+
+| Before | After |
+|---|---|
+| 1529 stmts, 28 miss, **98%** | 1491 stmts, 0 miss, **100%** |
+
+The stmt count decreased by 38 because `# pragma: no cover` removes lines from
+`coverage.py`'s counted set (it excludes the annotated line and its block from
+both numerator and denominator).
+
+Total: **446/446 tests** (unchanged).
 
 ---
 

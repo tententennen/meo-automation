@@ -27,7 +27,7 @@ import json
 try:
     from dotenv import load_dotenv
     load_dotenv()
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
 
 from meo.auth import get_credentials
@@ -112,5 +112,5 @@ def main() -> None:
         print()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

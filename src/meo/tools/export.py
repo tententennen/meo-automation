@@ -23,7 +23,7 @@ from typing import Any
 try:
     from dotenv import load_dotenv
     load_dotenv()
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
 
 from .. import config as cfg
@@ -196,5 +196,5 @@ def main() -> None:
     _write_csv(rows, fieldnames, args.output)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

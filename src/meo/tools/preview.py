@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 try:
     from dotenv import load_dotenv
     load_dotenv()
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
 
 from .. import config as cfg
@@ -184,5 +184,5 @@ def main() -> None:
     sys.exit(1 if had_error else 0)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

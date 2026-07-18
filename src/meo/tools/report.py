@@ -20,7 +20,7 @@ _JST = ZoneInfo("Asia/Tokyo")
 try:
     from dotenv import load_dotenv
     load_dotenv()
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
 
 from .. import config as cfg
@@ -133,5 +133,5 @@ def main() -> None:
     sys.exit(exit_code)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
