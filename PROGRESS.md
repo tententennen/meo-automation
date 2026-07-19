@@ -1,6 +1,71 @@
 # PROGRESS
 
-## Status: All milestones complete — 446/446 tests green (100% coverage)
+## Status: All milestones complete — 447/447 tests green (100% coverage)
+
+---
+
+## Completed this run (run 52)
+
+### Fix: `deferred` count double-counted manually-held reviews (`src/meo/reviews.py`)
+
+**Problem**: `run_reviews_for_store()` computed `deferred` at the very end of the
+function as `unreplied_total - len(unreplied)`.  By that point `unreplied` had been
+re-assigned to `auto_reply` (the reviews that passed the star-rating filter), so the
+computation inadvertently included reviews that were *also* reported in `manual`.
+
+Concrete example: 6 unreplied reviews, `max_replies_per_run=4`, `min_star_autoreply=4`:
+
+```
+After cap   → 4 survive (R0★5, R1★5, R2★4, R3★3), 2 cap-deferred (R4★3, R5★1)
+After star  → 3 auto-reply (R0★5, R1★5, R2★4), 1 manual (R3★3)
+```
+
+| Key | Correct | Buggy |
+|---|---|---|
+| `replied` | 3 | 3 |
+| `deferred` | **2** (cap-only) | **3** (cap + manual) |
+| `manual` | 1 | 1 |
+
+The buggy value caused the Slack run-summary to show `"3 deferred, 1 need manual
+reply"` — the operator saw 4 outstanding reviews (3 + 1) when there were really
+only 3 (2 cap-deferred + 1 manual).  Worse, it looked as if the manual review
+*also* had a "future auto-reply" pending when it would actually be skipped forever
+until the operator raised `min_star_autoreply`.
+
+The root cause: the `deferred` calculation used `len(unreplied)` which referred to
+`auto_reply` at return time, not the post-cap count.
+
+**Fix**: Added `unreplied_after_cap = len(unreplied)` immediately after the cap
+truncation and before the star-rating filter, then changed the return value to use
+`unreplied_total - unreplied_after_cap` for `deferred`:
+
+```python
+# Before (wrong — len(unreplied) is auto_reply count at this point):
+"deferred": unreplied_total - len(unreplied),  # included manual reviews
+
+# After (correct — snapshot taken before star filter):
+unreplied_after_cap = len(unreplied)           # captured after cap, before star filter
+...
+"deferred": unreplied_total - unreplied_after_cap,  # only cap-deferred; manual is separate
+```
+
+The comment on the variable explains the invariant so a future reader doesn't
+re-introduce the double-count.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/reviews.py` | `unreplied_after_cap` snapshot after cap; `deferred` uses `unreplied_total - unreplied_after_cap` |
+| `tests/test_reviews.py` | +1 test: `test_deferred_excludes_manual_reviews` |
+
+**New test (+1 test):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_reviews.py` | `test_deferred_excludes_manual_reviews` | cap=4 + min_star=4 on 6 reviews → deferred=2 (cap-only), manual=1, replied=3; NOT deferred=3 |
+
+Total: **447/447 tests** (was 446).
 
 ---
 

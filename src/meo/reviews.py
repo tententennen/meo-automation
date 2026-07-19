@@ -92,6 +92,12 @@ def run_reviews_for_store(
         )
         unreplied = unreplied[:max_replies]
 
+    # Snapshot the count after the cap but before star-rating filtering.
+    # deferred = reviews set aside by the per-run cap alone; reviews held for
+    # manual reply (below min_star_autoreply) are tracked separately in manual
+    # and must not be double-counted here.
+    unreplied_after_cap = len(unreplied)
+
     # --- Star-rating threshold --- #
     # Reviews below min_star_autoreply are held for manual handling instead of
     # receiving an AI-generated reply.  Default 1 = reply to everything.
@@ -168,7 +174,7 @@ def run_reviews_for_store(
         "store_key": store_key,
         "replied": replied,
         "skipped": gbp_skipped,                       # already-replied on GBP
-        "deferred": unreplied_total - len(unreplied), # capped by max_replies_per_run
+        "deferred": unreplied_total - unreplied_after_cap, # only cap-deferred; manual is separate
         "manual": len(manual),                        # held for manual reply (below star threshold)
         "errors": errors,
     }

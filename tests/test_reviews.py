@@ -348,6 +348,30 @@ def test_per_store_min_star_override():
     mock_gen.assert_not_called()
 
 
+def test_deferred_excludes_manual_reviews():
+    """deferred counts only cap-deferred reviews, not reviews also counted in manual.
+
+    Scenario: 6 unreplied, cap=4, min_star=4.
+      - After cap: 4 survive (R0★5–R3★4), 2 deferred (R4★3, R5★1)
+      - After star filter: 3 auto-reply (R0★5, R1★5, R2★4), 1 manual (R3★3)
+    Expected: replied=3, deferred=2 (cap only), manual=1 (star filter only).
+    A buggy implementation would return deferred=3 (cap + manual), double-counting R3.
+    """
+    store_with_override = {**_STORE, "overrides": {"max_replies_per_run": 4, "min_star_autoreply": 4}}
+    gbp = MagicMock()
+    gbp.list_reviews.return_value = [
+        {"name": f"accounts/1/locations/1/reviews/rev{i}", "reviewId": f"rev{i}",
+         "reviewer": {"displayName": f"U{i}"}, "starRating": star, "comment": ""}
+        for i, star in enumerate(["FIVE", "FIVE", "FOUR", "THREE", "THREE", "ONE"])
+    ]
+    gbp.reply_to_review.return_value = {}
+    with patch("meo.reviews.generate_reply", return_value="返信"):
+        result = run_reviews_for_store(store_with_override, gbp, dry_run=True)
+    assert result["replied"] == 3     # R0★5, R1★5, R2★4 auto-replied
+    assert result["manual"] == 1      # R3★3 held (below min_star=4)
+    assert result["deferred"] == 2    # R4★3, R5★1 cut by cap (NOT including R3★3)
+
+
 # ---------------------------------------------------------------------------
 # Held review snapshot tests
 # ---------------------------------------------------------------------------
