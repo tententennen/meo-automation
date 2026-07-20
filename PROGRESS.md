@@ -1,6 +1,110 @@
 # PROGRESS
 
-## Status: All milestones complete — 447/447 tests green (100% coverage)
+## Status: All milestones complete — 449/449 tests green (100% coverage)
+
+---
+
+## Completed this run (run 53)
+
+### Fix: misleading and duplicate log warnings for unconfigured/errored Drive folder (`src/meo/posts.py`)
+
+**Problem**: Two log-quality bugs in the `image_meta is None` path of `run_post_for_store()`:
+
+**Bug 1 — Misleading WARNING for unconfigured folder (TODO placeholder)**
+
+When `drive_folder_id` was still the `"TODO: Google Drive folder ID"` placeholder,
+the code correctly set `image_meta = None` and emitted a DEBUG message:
+
+```
+DEBUG: [mybear_studio_kyoto] Drive folder not configured; skipping photo attachment.
+```
+
+But because `image_meta` was `None`, execution fell through to the `else` block at
+the end of the image selection section and also emitted:
+
+```
+WARNING: [mybear_studio_kyoto] No images found in Drive folder; posting without photo.
+```
+
+This is wrong: there is no Drive folder problem. The operator has not yet filled in
+the folder ID. The WARNING "No images found" implies the Drive API was called and
+returned an empty folder, which is false. An operator investigating the WARNING would
+waste time checking Drive folder contents, OAuth scopes, and API permissions — none
+of which are the actual issue.
+
+**Bug 2 — Duplicate WARNING after a Drive API error**
+
+When `pick_random_image` raised an exception, the `except` block correctly emitted:
+
+```
+WARNING: [store_key] Drive image selection failed (503 ...); posting without photo.
+```
+
+But again, since `image_meta = None`, the same bottom `else` then emitted:
+
+```
+WARNING: [store_key] No images found in Drive folder; posting without photo.
+```
+
+Two WARNINGs for one failure event, the second one misleading ("no images found"
+when the real issue was a transient API error).
+
+**Root cause**: The final `else` block was the `else` of `if image_meta:` — it
+fired whenever `image_meta` was `None`, without distinguishing between the
+three cases:
+- Unconfigured folder → no Drive call made (no warning needed)
+- Drive API error → error already warned above (no duplicate needed)
+- Empty folder → genuinely actionable warning (the only correct case)
+
+**Fix**: Added `suppress_no_image_warning = False` before the folder-check block,
+set to `True` in both the unconfigured-folder path and the `except` handler.
+Changed the final `else` to `elif not suppress_no_image_warning:`:
+
+```python
+suppress_no_image_warning = False
+if not folder_id or "TODO" in folder_id:
+    logger.debug(...)
+    image_meta = None
+    suppress_no_image_warning = True        # ← folder not configured; no warning needed
+else:
+    try:
+        image_meta = drive.pick_random_image(...)
+    except Exception as exc:
+        logger.warning(...)
+        image_meta = None
+        suppress_no_image_warning = True    # ← Drive error already warned; no duplicate
+
+...
+
+elif not suppress_no_image_warning:         # ← only fires for genuine empty-folder case
+    logger.warning("[%s] No images found in Drive folder; posting without photo.", store_key)
+```
+
+**Effect by case:**
+
+| Scenario | Before | After |
+|---|---|---|
+| Folder is TODO (unconfigured) | DEBUG + misleading WARNING | DEBUG only ✓ |
+| Drive API raises exception | WARNING (correct) + duplicate WARNING | WARNING (correct) only ✓ |
+| Folder configured, Drive returns None | WARNING | WARNING (unchanged) ✓ |
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/posts.py` | `suppress_no_image_warning` flag added; `else:` → `elif not suppress_no_image_warning:` at bottom of image-selection block |
+| `tests/test_posts.py` | +2 tests (see below) |
+
+**New tests (+2 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_posts.py` | `test_todo_drive_folder_id_does_not_warn_no_images` | `drive_folder_id = "TODO: ..."` → no WARNING in caplog containing "No images found" |
+| `tests/test_posts.py` | `test_drive_error_does_not_emit_no_images_warning` | `pick_random_image` raises → "Drive image selection failed" in caplog; "No images found" absent |
+
+**Coverage change:** `posts.py` was already at 100%; the new flag and branch are covered by the new tests.
+
+Total: **449/449 tests** (was 447), 100% coverage maintained.
 
 ---
 
