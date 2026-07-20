@@ -407,3 +407,56 @@ def test_pick_theme_returns_none_when_themes_list_is_empty():
     with patch("meo.posts.get_recent_themes", return_value=[]):
         result = _pick_theme("the_body_kyoto", [])
     assert result is None
+
+
+def test_todo_drive_folder_id_does_not_warn_no_images(caplog):
+    """When drive_folder_id is a TODO placeholder, the 'No images found' WARNING must
+    NOT be emitted.  The only log entry for the Drive path should be the DEBUG message
+    'Drive folder not configured'; escalating to WARNING is misleading because the folder
+    simply hasn't been configured yet — there is no Drive error or empty-folder condition.
+    """
+    import logging
+    gbp, _, post_text = _make_mocks()
+    drive = MagicMock()
+    store_with_todo = {**_STORE, "drive_folder_id": "TODO: Google Drive folder ID"}
+    with caplog.at_level(logging.DEBUG, logger="meo.posts"), \
+         patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
+        run_post_for_store(store_with_todo, gbp, drive, dry_run=False)
+
+    warning_msgs = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not any("No images found" in m for m in warning_msgs), (
+        f"Expected no 'No images found' WARNING for unconfigured folder, got: {warning_msgs}"
+    )
+
+
+def test_drive_error_does_not_emit_no_images_warning(caplog):
+    """When pick_random_image raises, only 'Drive image selection failed' is logged at
+    WARNING; 'No images found in Drive folder' must NOT appear — that would be a duplicate
+    and misleading (the folder may well have images; it's the API call that failed).
+    """
+    import logging
+    gbp, drive, post_text = _make_mocks()
+    drive.pick_random_image.side_effect = Exception("503 Service Unavailable")
+    with caplog.at_level(logging.WARNING, logger="meo.posts"), \
+         patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    warning_msgs = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("Drive image selection failed" in m for m in warning_msgs), (
+        "Expected 'Drive image selection failed' warning"
+    )
+    assert not any("No images found" in m for m in warning_msgs), (
+        f"Expected no 'No images found' duplicate WARNING after Drive error, got: {warning_msgs}"
+    )

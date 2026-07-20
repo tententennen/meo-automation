@@ -103,12 +103,18 @@ def run_post_for_store(
 
     # --- Image selection (prefer images not used recently) ---
     recent_image_ids = get_recent_images(store_key)
+    # suppress_no_image_warning is set when image_meta=None for a reason other than an
+    # empty folder — the folder is not yet configured (debug-only) or the Drive call failed
+    # (already warned above).  The "No images found" warning below is reserved for the
+    # genuine case: folder configured, Drive call succeeded, but the folder has no images.
+    suppress_no_image_warning = False
     if not folder_id or "TODO" in folder_id:
         # The drive_folder_id placeholder has not been replaced in stores.yaml yet.
         # main.py already logged a warning; skip the Drive call to avoid a misleading
         # Drive API error appearing as the root cause in the logs.
         logger.debug("[%s] Drive folder not configured; skipping photo attachment.", store_key)
         image_meta = None
+        suppress_no_image_warning = True
     else:
         try:
             image_meta = drive.pick_random_image(folder_id, recent_ids=recent_image_ids)
@@ -118,6 +124,7 @@ def run_post_for_store(
                 store_key, exc,
             )
             image_meta = None
+            suppress_no_image_warning = True
     media_url: str | None = None
 
     if image_meta:
@@ -144,7 +151,7 @@ def run_post_for_store(
                         "[%s] Drive→GBP upload failed (%s); no fallback URL. Posting without photo.",
                         store_key, exc,
                     )
-    else:
+    elif not suppress_no_image_warning:
         logger.warning("[%s] No images found in Drive folder; posting without photo.", store_key)
 
     # --- Call-to-action (optional per-store config) ---
