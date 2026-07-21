@@ -22,6 +22,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import config as cfg
+from .state import get_post_history
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,9 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     industry = store.get("industry", "beauty_salon")
     tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
     banned_words_list = conf.get("banned_words", [])
-    max_chars = cfg.effective_defaults(store)["max_post_chars"]
+    store_defaults = cfg.effective_defaults(store)
+    max_chars = store_defaults["max_post_chars"]
+    recent_count: int = store_defaults.get("recent_post_context_count", 3)
 
     system = (
         f"あなたはGoogleビジネスプロフィールの投稿文を書くプロのコピーライターです。"
@@ -97,12 +100,32 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     # Omit the 禁止ワード line entirely when the list is empty — an empty value
     # ("禁止ワード: ") is misleading and adds no useful signal to the LLM.
     banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
+
+    # Inject snippets of recent posts so the LLM actively diversifies sentence
+    # structure, vocabulary, and angle rather than converging to a single style.
+    # recent_post_context_count=0 disables this (useful for first-run testing).
+    recent_context_line = ""
+    if recent_count > 0:
+        history = get_post_history(store["key"])[:recent_count]
+        if history:
+            snippets = []
+            for i, entry in enumerate(history, 1):
+                text = entry.get("text", "")
+                snippet = text[:60] + "…" if len(text) > 60 else text
+                snippets.append(f"{i}. 「{snippet}」")
+            recent_context_line = (
+                "最近の投稿（同じ文体・構成・表現の繰り返しを避けてください）:\n"
+                + "\n".join(snippets)
+                + "\n"
+            )
+
     user = (
         f"店舗名: {store['name']}\n"
         f"現在の日付・季節: {date_context}\n"
         f"トーン: {tone_profile['tone']}\n"
         f"{theme_line}\n"
         f"{banned_line}"
+        f"{recent_context_line}"
         f"条件:\n"
         f"- 日本語で書く\n"
         f"- {max_chars}文字以内\n"

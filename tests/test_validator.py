@@ -317,6 +317,40 @@ def test_validate_content_banned_words_as_dict_is_invalid():
     assert any("banned_words" in e for e in errors)
 
 
+def test_validate_content_recent_post_context_count_negative_is_invalid():
+    """recent_post_context_count must be >= 0; a negative value must be rejected."""
+    content = {
+        **_VALID_CONTENT,
+        "defaults": {**_VALID_CONTENT["defaults"], "recent_post_context_count": -1},
+    }
+    errors = v.validate_content(content)
+    assert any("recent_post_context_count" in e for e in errors)
+
+
+def test_validate_content_recent_post_context_count_zero_is_valid():
+    """recent_post_context_count=0 (disable context injection) must be accepted."""
+    content = {
+        **_VALID_CONTENT,
+        "defaults": {**_VALID_CONTENT["defaults"], "recent_post_context_count": 0},
+    }
+    assert v.validate_content(content) == []
+
+
+def test_validate_content_recent_post_context_count_absent_is_valid():
+    """recent_post_context_count is optional; its absence must not cause an error."""
+    assert v.validate_content(_VALID_CONTENT) == []
+
+
+def test_validate_content_recent_post_context_count_float_is_invalid():
+    """A float value (e.g. 2.5) must be rejected — only integers are accepted."""
+    content = {
+        **_VALID_CONTENT,
+        "defaults": {**_VALID_CONTENT["defaults"], "recent_post_context_count": 2.5},
+    }
+    errors = v.validate_content(content)
+    assert any("recent_post_context_count" in e for e in errors)
+
+
 # ---------------------------------------------------------------------------
 # validate_all
 # ---------------------------------------------------------------------------

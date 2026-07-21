@@ -850,3 +850,111 @@ def test_call_openai_none_content_raises_runtime_error(monkeypatch):
             content._call_openai("prompt", {"max_retries": 1})
     finally:
         sys.modules.pop("openai", None)
+
+
+# ---------------------------------------------------------------------------
+# Recent post context injection tests
+# ---------------------------------------------------------------------------
+
+def test_generate_post_with_recent_history_injects_snippets():
+    """When post history exists the LLM prompt must include recent-post snippets.
+
+    The context block tells the LLM to diversify away from recent content, so the
+    snippet text (first 60 chars of each past post) must appear in the user prompt.
+    """
+    history = [
+        {"date": "2026-07-20", "text": "春のキャンペーンを開催中です！ぜひお越しください。", "theme": "キャンペーン・お得情報"},
+        {"date": "2026-07-19", "text": "新しいヘアカラーメニューが登場しました。", "theme": "新メニュー・施術のご案内"},
+    ]
+    with patch("meo.content.get_post_history", return_value=history), \
+         patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "最近の投稿" in user_prompt
+    assert "春のキャンペーン" in user_prompt
+    assert "新しいヘアカラー" in user_prompt
+
+
+def test_generate_post_no_history_omits_context_block():
+    """When there is no post history the 最近の投稿 context block must be absent.
+
+    On the very first run state.json has no post_history, so the context block
+    would be empty.  An empty block ("最近の投稿:\n") still occupies prompt space
+    and looks confusing; it must be omitted entirely when the list is empty.
+    """
+    with patch("meo.content.get_post_history", return_value=[]), \
+         patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "最近の投稿" not in user_prompt
+
+
+def test_generate_post_context_count_zero_skips_history_lookup():
+    """Setting recent_post_context_count=0 must disable the context block entirely.
+
+    The store override should also work so operators can silence context injection
+    for a specific store without touching the global default.
+    """
+    store_no_context = {**_STORE, "overrides": {"recent_post_context_count": 0}}
+    mock_history = MagicMock()  # would raise if called, letting us detect the call
+    with patch("meo.content.get_post_history", mock_history), \
+         patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(store_no_context)
+    mock_history.assert_not_called()
+    user_prompt = mock_llm.call_args.args[0]
+    assert "最近の投稿" not in user_prompt
+
+
+def test_generate_post_history_text_truncated_to_60_chars():
+    """Post snippets longer than 60 characters must be truncated with an ellipsis (…).
+
+    The truncation prevents the context block from bloating the prompt when past
+    posts are long (up to max_post_chars = 1500 chars).
+    """
+    long_text = "あ" * 80   # 80 chars — must be truncated to 60 + …
+    history = [{"date": "2026-07-20", "text": long_text, "theme": ""}]
+    with patch("meo.content.get_post_history", return_value=history), \
+         patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    expected_snippet = "あ" * 60 + "…"
+    assert expected_snippet in user_prompt
+
+
+def test_generate_post_history_short_text_not_truncated():
+    """Post snippets shorter than or equal to 60 characters must appear verbatim.
+
+    No trailing ellipsis should be added when the text already fits within the
+    60-character window.
+    """
+    short_text = "こんにちは！春のご来店をお待ちしています。"  # well under 60 chars
+    history = [{"date": "2026-07-20", "text": short_text, "theme": ""}]
+    with patch("meo.content.get_post_history", return_value=history), \
+         patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert f"「{short_text}」" in user_prompt
+    # No ellipsis appended — the full text fits
+    assert f"{short_text}…" not in user_prompt
+
+
+def test_generate_post_context_capped_at_recent_post_context_count():
+    """Only the first N entries from history are injected (default N=3).
+
+    Even if the store has 10 archived posts, the context block must contain
+    at most recent_post_context_count snippets (default 3) to keep the prompt
+    length predictable.
+    """
+    history = [
+        {"date": f"2026-07-{20 - i:02d}", "text": f"投稿{i}" * 5, "theme": ""}
+        for i in range(10)  # 10 posts; only 3 should appear
+    ]
+    with patch("meo.content.get_post_history", return_value=history), \
+         patch("meo.content._call_llm", return_value="テスト投稿") as mock_llm:
+        content.generate_post(_STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    # Items are numbered: expect "1. ", "2. ", "3. " but NOT "4. "
+    assert "1. 「" in user_prompt
+    assert "2. 「" in user_prompt
+    assert "3. 「" in user_prompt
+    assert "4. 「" not in user_prompt

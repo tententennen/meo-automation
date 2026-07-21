@@ -25,6 +25,7 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "max_replies_per_run",
     "min_star_autoreply",
     "max_review_age_days",
+    "recent_post_context_count",
 })
 
 
@@ -153,6 +154,16 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
             f"got {type(banned_words).__name__}. "
             "A bare string would be iterated character-by-character in LLM prompts."
         )
+
+    if isinstance(defaults, dict):
+        recent_count = defaults.get("recent_post_context_count")
+        if recent_count is not None and (
+            not isinstance(recent_count, int) or recent_count < 0
+        ):
+            errors.append(
+                "content.yaml: defaults.recent_post_context_count must be an integer >= 0 "
+                "(omit to use the default of 3; set to 0 to disable recent-post context)"
+            )
 
     return errors
 
