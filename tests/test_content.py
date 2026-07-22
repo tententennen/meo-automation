@@ -958,3 +958,116 @@ def test_generate_post_context_capped_at_recent_post_context_count():
     assert "2. 「" in user_prompt
     assert "3. 「" in user_prompt
     assert "4. 「" not in user_prompt
+
+
+# ---------------------------------------------------------------------------
+# Recent reply context injection tests
+# ---------------------------------------------------------------------------
+
+def test_generate_reply_with_recent_history_injects_snippets():
+    """When reply history exists the LLM prompt must include recent-reply snippets.
+
+    The context block tells the LLM to diversify away from recent replies, so the
+    snippet text (first 60 chars of each past reply) must appear in the user prompt.
+    """
+    history = [
+        {"date": "2026-07-20", "review_id": "r1", "reviewer": "田中", "stars": "FIVE",
+         "reply": "田中様、この度はご来店いただきありがとうございます。またのご来店をお待ちしております。"},
+        {"date": "2026-07-19", "review_id": "r2", "reviewer": "鈴木", "stars": "THREE",
+         "reply": "鈴木様、貴重なご意見をいただきありがとうございます。"},
+    ]
+    with patch("meo.content.get_reply_history", return_value=history), \
+         patch("meo.content._call_llm", return_value="テスト返信") as mock_llm:
+        content.generate_reply(_REVIEW, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "最近の返信" in user_prompt
+    assert "田中様、この度はご来店いただき" in user_prompt
+    assert "鈴木様、貴重なご意見" in user_prompt
+
+
+def test_generate_reply_no_history_omits_context_block():
+    """When there is no reply history the 最近の返信 context block must be absent.
+
+    On the very first run state.json has no reply_history, so the context block
+    would be empty.  An empty block ("最近の返信:\n") still occupies prompt space
+    and looks confusing; it must be omitted entirely when the list is empty.
+    """
+    with patch("meo.content.get_reply_history", return_value=[]), \
+         patch("meo.content._call_llm", return_value="テスト返信") as mock_llm:
+        content.generate_reply(_REVIEW, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert "最近の返信" not in user_prompt
+
+
+def test_generate_reply_context_count_zero_skips_history_lookup():
+    """Setting recent_reply_context_count=0 must disable the context block entirely.
+
+    The store override should also work so operators can silence context injection
+    for a specific store without touching the global default.
+    """
+    store_no_context = {**_STORE, "overrides": {"recent_reply_context_count": 0}}
+    mock_history = MagicMock()  # would raise if called, letting us detect the call
+    with patch("meo.content.get_reply_history", mock_history), \
+         patch("meo.content._call_llm", return_value="テスト返信") as mock_llm:
+        content.generate_reply(_REVIEW, store_no_context)
+    mock_history.assert_not_called()
+    user_prompt = mock_llm.call_args.args[0]
+    assert "最近の返信" not in user_prompt
+
+
+def test_generate_reply_history_text_truncated_to_60_chars():
+    """Reply snippets longer than 60 characters must be truncated with an ellipsis (…).
+
+    The truncation prevents the context block from bloating the prompt when past
+    replies are long (up to max_reply_chars = 4096 chars).
+    """
+    long_reply = "あ" * 80   # 80 chars — must be truncated to 60 + …
+    history = [{"date": "2026-07-20", "review_id": "r1", "reviewer": "?", "stars": "FIVE",
+                "reply": long_reply}]
+    with patch("meo.content.get_reply_history", return_value=history), \
+         patch("meo.content._call_llm", return_value="テスト返信") as mock_llm:
+        content.generate_reply(_REVIEW, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    expected_snippet = "あ" * 60 + "…"
+    assert expected_snippet in user_prompt
+
+
+def test_generate_reply_history_short_text_not_truncated():
+    """Reply snippets shorter than or equal to 60 characters must appear verbatim.
+
+    No trailing ellipsis should be added when the text already fits within the
+    60-character window.
+    """
+    short_reply = "ありがとうございます！またのご来店をお待ちしております。"  # well under 60 chars
+    history = [{"date": "2026-07-20", "review_id": "r1", "reviewer": "?", "stars": "FIVE",
+                "reply": short_reply}]
+    with patch("meo.content.get_reply_history", return_value=history), \
+         patch("meo.content._call_llm", return_value="テスト返信") as mock_llm:
+        content.generate_reply(_REVIEW, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    assert f"「{short_reply}」" in user_prompt
+    # No ellipsis appended — the full text fits
+    assert f"{short_reply}…" not in user_prompt
+
+
+def test_generate_reply_context_capped_at_recent_reply_context_count():
+    """Only the first N entries from history are injected (default N=3).
+
+    Even if the store has 10 archived replies, the context block must contain
+    at most recent_reply_context_count snippets (default 3) to keep the prompt
+    length predictable.
+    """
+    history = [
+        {"date": f"2026-07-{20 - i:02d}", "review_id": f"r{i}", "reviewer": "?",
+         "stars": "FIVE", "reply": f"返信{i}" * 5}
+        for i in range(10)  # 10 replies; only 3 should appear
+    ]
+    with patch("meo.content.get_reply_history", return_value=history), \
+         patch("meo.content._call_llm", return_value="テスト返信") as mock_llm:
+        content.generate_reply(_REVIEW, _STORE)
+    user_prompt = mock_llm.call_args.args[0]
+    # Items are numbered: expect "1. ", "2. ", "3. " but NOT "4. "
+    assert "1. 「" in user_prompt
+    assert "2. 「" in user_prompt
+    assert "3. 「" in user_prompt
+    assert "4. 「" not in user_prompt

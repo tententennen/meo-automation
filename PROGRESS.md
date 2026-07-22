@@ -1,6 +1,77 @@
 # PROGRESS
 
-## Status: All milestones complete — 459/459 tests green (100% coverage)
+## Status: All milestones complete — 469/469 tests green (100% coverage)
+
+---
+
+## Completed this run (run 55)
+
+### feat(content): inject recent reply history into LLM prompt to improve reply variety
+
+**Problem**: `generate_reply()` had no visibility into the text of recent replies that
+were actually published. As a result, even across many different reviews, the AI tended
+to converge toward a recognisable fixed style — same opening phrases, same structural
+patterns, same level of formality — across consecutive replies. Operators reviewing
+the `meo-export replies` CSV would see a formulaic, template-like feel after a week
+of automated replies.
+
+**Root cause**: `generate_reply()` called `cfg.effective_defaults(store)` only to
+obtain `max_reply_chars`, and never consulted the reply-history archive in `state.py`.
+This is exactly the same root cause fixed for posts in run 54 — but the analogous
+fix was never applied to the replies path.
+
+**Fix**: Added a `recent_reply_context_count` field (default `3`) to `content.yaml`
+defaults. When non-zero, `generate_reply()` reads the last N entries from
+`get_reply_history()` and injects a compact context block into the user prompt:
+
+```
+最近の返信（同じ文体・定型文の繰り返しを避けてください）:
+1. 「田中様、この度はご来店いただきありがとうございます…」
+2. 「鈴木様、貴重なご意見をいただきありがとうございます…」
+3. 「山田様、スタッフ一同、またのご来店をお待ちしております…」
+```
+
+Each snippet is the first 60 characters of the archived reply (truncated with `…` if
+longer). Sixty characters is enough for the LLM to recognise opening-phrase and
+structural patterns without adding significant token cost (≈ 200 extra tokens for
+3 snippets) — the same budget as the post context injection from run 54.
+
+**Behaviour by case:**
+
+| Scenario | Behaviour |
+|---|---|
+| No reply history (first run) | Context block omitted entirely — prompt unchanged |
+| History exists, count > 0 | Up to N snippets injected into user prompt |
+| `recent_reply_context_count: 0` | Context block disabled; `get_reply_history()` not called |
+| Store override `recent_reply_context_count: 0` | Silences context for that store only |
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `config/content.yaml` | `recent_reply_context_count: 3` added to `defaults` |
+| `src/meo/content.py` | `from .state import get_post_history, get_reply_history`; `generate_reply()` reads `recent_count` from `effective_defaults`, builds `recent_reply_context_line`; `cfg.effective_defaults(store)` now stored in `store_defaults` variable |
+| `src/meo/validator.py` | `recent_reply_context_count` added to `_ALLOWED_OVERRIDE_KEYS`; validated as `int >= 0` in `validate_content()` |
+| `src/meo/config.py` | `effective_defaults` docstring updated to list `recent_reply_context_count` in allowed override keys |
+| `tests/test_content.py` | +6 tests (see below) |
+| `tests/test_validator.py` | +4 tests (see below) |
+
+**New tests (+10 tests):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_content.py` | `test_generate_reply_with_recent_history_injects_snippets` | History with 2 entries → both snippets appear in prompt |
+| `tests/test_content.py` | `test_generate_reply_no_history_omits_context_block` | Empty history → `最近の返信` absent from prompt |
+| `tests/test_content.py` | `test_generate_reply_context_count_zero_skips_history_lookup` | count=0 → `get_reply_history` never called; context block absent |
+| `tests/test_content.py` | `test_generate_reply_history_text_truncated_to_60_chars` | 80-char reply → 60-char snippet + `…` in prompt |
+| `tests/test_content.py` | `test_generate_reply_history_short_text_not_truncated` | Short reply → appears verbatim, no ellipsis added |
+| `tests/test_content.py` | `test_generate_reply_context_capped_at_recent_reply_context_count` | 10-entry history, default count=3 → items 1–3 present, item 4 absent |
+| `tests/test_validator.py` | `test_validate_content_recent_reply_context_count_negative_is_invalid` | `-1` → error |
+| `tests/test_validator.py` | `test_validate_content_recent_reply_context_count_zero_is_valid` | `0` → no error |
+| `tests/test_validator.py` | `test_validate_content_recent_reply_context_count_absent_is_valid` | absent → no error |
+| `tests/test_validator.py` | `test_validate_content_recent_reply_context_count_float_is_invalid` | `2.5` → error |
+
+Total: **469/469 tests** (was 459), 100% coverage maintained.
 
 ---
 

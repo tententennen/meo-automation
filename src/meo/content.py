@@ -22,7 +22,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import config as cfg
-from .state import get_post_history
+from .state import get_post_history, get_reply_history
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +206,9 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     industry = store.get("industry", "beauty_salon")
     tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
     banned_words_list = conf.get("banned_words", [])
-    max_chars = cfg.effective_defaults(store)["max_reply_chars"]
+    store_defaults = cfg.effective_defaults(store)
+    max_chars = store_defaults["max_reply_chars"]
+    recent_count: int = store_defaults.get("recent_reply_context_count", 3)
 
     raw_name = review.get("reviewer", {}).get("displayName", "")
     reviewer_name = _sanitize_reviewer_name(raw_name)
@@ -226,9 +228,29 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
         f"返信文のみを出力し、説明文や前置きは一切含めないでください。"
     )
     banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
+
+    # Inject snippets of recent replies so the LLM actively diversifies sentence
+    # structure, opening phrases, and expressions rather than repeating the same template.
+    # recent_reply_context_count=0 disables this (useful for first-run testing).
+    recent_reply_context_line = ""
+    if recent_count > 0:
+        reply_history = get_reply_history(store["key"])[:recent_count]
+        if reply_history:
+            snippets = []
+            for i, entry in enumerate(reply_history, 1):
+                text = entry.get("reply", "")
+                snippet = text[:60] + "…" if len(text) > 60 else text
+                snippets.append(f"{i}. 「{snippet}」")
+            recent_reply_context_line = (
+                "最近の返信（同じ文体・定型文の繰り返しを避けてください）:\n"
+                + "\n".join(snippets)
+                + "\n"
+            )
+
     user = (
         f"現在の日付・季節: {date_context}\n"
         f"{banned_line}"
+        f"{recent_reply_context_line}"
         f"レビュアー名: {reviewer_name}\n"
         f"評価: {star_display}\n"
         f"レビュー内容: {comment_text}\n"

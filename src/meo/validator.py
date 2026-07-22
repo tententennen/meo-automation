@@ -26,6 +26,7 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "min_star_autoreply",
     "max_review_age_days",
     "recent_post_context_count",
+    "recent_reply_context_count",
 })
 
 
@@ -163,6 +164,15 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
             errors.append(
                 "content.yaml: defaults.recent_post_context_count must be an integer >= 0 "
                 "(omit to use the default of 3; set to 0 to disable recent-post context)"
+            )
+
+        recent_reply_count = defaults.get("recent_reply_context_count")
+        if recent_reply_count is not None and (
+            not isinstance(recent_reply_count, int) or recent_reply_count < 0
+        ):
+            errors.append(
+                "content.yaml: defaults.recent_reply_context_count must be an integer >= 0 "
+                "(omit to use the default of 3; set to 0 to disable recent-reply context)"
             )
 
     return errors
