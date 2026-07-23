@@ -170,6 +170,7 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-export held-reviews` | Export reviews held for manual reply to CSV (set when `min_star_autoreply > 1`) |
 | `meo-reset` | Reset state for one store or all stores (post guard, image/theme history, reply history) |
 | `meo-discover-locations` | List all GBP accounts and locations — prints ready-to-paste `location_id` values for `config/stores.yaml` (run once after API access is granted) |
+| `meo-stats` | Show aggregate statistics — total posts/replies, activity rates, theme frequency, and star-rating distribution across the full archive |
 
 ```bash
 # Discover location IDs (run once after GBP API access is approved)
@@ -179,6 +180,10 @@ meo-discover-locations
 meo-export posts --output posts.csv
 meo-export replies --store the_body_kyoto --output kyoto_replies.csv
 meo-export held-reviews --output held.csv   # reviews awaiting manual reply
+
+# Stats (once the tool has been running)
+meo-stats                               # all stores
+meo-stats --store the_body_kyoto        # single store
 
 # Reset examples (use when re-testing or after manual interventions)
 meo-reset post-guard --store the_body_kyoto  # allow a new post today for one store

@@ -38,6 +38,7 @@ meo-health = "meo.tools.health:main"
 meo-export = "meo.tools.export:main"
 meo-reset = "meo.tools.reset:main"
 meo-discover-locations = "meo.tools.discover_locations:main"
+meo-stats = "meo.tools.stats:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,6 +1,60 @@
 # PROGRESS
 
-## Status: All milestones complete — 469/469 tests green (100% coverage)
+## Status: All milestones complete — 504/504 tests green (100% coverage)
+
+---
+
+## Completed this run (run 56)
+
+### feat(tools): add `meo-stats` — aggregate statistics across the full archive
+
+**Gap**: `meo-report` shows the last 5 raw entries per store and `meo-export`
+dumps raw CSV, but neither gives the owner a quick "how is the automation
+performing?" answer once the tool has been running for weeks.
+
+**New command**: `meo-stats` (also `python -m meo.tools.stats`)
+
+Output per store:
+- **Posts**: total archived, date range, period in days, estimated posts/week
+  rate, and theme frequency table (top 5 themes with ×-counts).
+- **Replies**: total archived, date range, and star-rating distribution with
+  ASCII bar chart and percentages for each of the five star levels.
+
+```
+=== MEO Automation — Aggregate Statistics ===
+Generated: 2026-07-23 09:00 JST
+
+──────────────── THE BODY 京都店  key: the_body_kyoto ────────────────
+  最新情報 Posts  (up to 30 archived)
+    Total archived: 25
+    Period:         2026-01-01 → 2026-07-22  (203 days)
+    Rate:           ~0.9/week
+    Top themes:
+      季節のお手入れ情報                          8×
+      キャンペーン・お得情報                       5×
+      ...
+
+  Review Replies  (up to 50 archived)
+    Total archived: 18
+    Period:         2026-01-05 → 2026-07-21
+    Star distribution:
+      ★★★★★  11  ████████████  ( 61%)
+      ★★★★☆   4  ████          ( 22%)
+      ★★★☆☆   2  ██            ( 11%)
+      ★★☆☆☆   1  █             (  6%)
+      ★☆☆☆☆   0               (  0%)
+```
+
+**Files changed**:
+
+| File | Change |
+|---|---|
+| `src/meo/tools/stats.py` | New module — 109 statements, 100% covered |
+| `tests/test_stats.py` | 35 new tests (helpers, run_stats(), main()) |
+| `pyproject.toml` | Added `meo-stats` entry point |
+| `README.md` | Added `meo-stats` to CLI tools table and example block |
+
+**Test count**: 469 → 504 (+35); coverage: 100% maintained.
 
 ---
 
@@ -4011,7 +4065,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (390/390, 98% coverage).
+All code is complete and the test suite is green (504/504, 100% coverage).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:
