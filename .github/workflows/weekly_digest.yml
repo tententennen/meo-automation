@@ -1,0 +1,51 @@
+name: Weekly MEO Digest
+
+on:
+  schedule:
+    # Every Monday at 0 UTC = 9 AM JST — summarises the previous Mon–Sun week
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print digest to stdout only, do not send to Slack"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # Restore the state file so the digest can read post/reply history
+      # accumulated by the daily runs.
+      - name: Restore post state
+        uses: actions/cache/restore@v4
+        with:
+          path: logs/state.json
+          key: meo-state-${{ github.run_id }}
+          restore-keys: |
+            meo-state-
+
+      - name: Install dependencies
+        run: pip install cffi && pip install -e .
+
+      - name: Send weekly digest
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            [ "${{ inputs.dry_run }}" = "true" ] && ARGS="--dry-run"
+          fi
+          meo-weekly-digest $ARGS

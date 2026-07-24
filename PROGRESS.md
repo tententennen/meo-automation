@@ -1,6 +1,75 @@
 # PROGRESS
 
-## Status: All milestones complete — 504/504 tests green (100% coverage)
+## Status: All milestones complete — 539/539 tests green (100% coverage)
+
+---
+
+## Completed this run (run 57)
+
+### feat(tools): add `meo-weekly-digest` — 7-day Slack summary of posts and replies
+
+**Gap**: The existing notification story had two extremes with nothing in between:
+- **Per-run Slack notification** (`notify.py`) fires after each daily run — fine-grained, but
+  easy to miss trends when glancing at a week's worth of messages.
+- **All-time `meo-stats`** shows aggregate figures across the entire archive — useful
+  for long-term analysis, but has no time-window concept.
+
+A business owner running the tool for several weeks needs a **weekly view**: how many posts
+went out this week, how many reviews were replied to, and what was the star-rating breakdown?
+This is the answer they want on Monday morning without opening a CSV or running a manual command.
+
+**New command**: `meo-weekly-digest` (also `python -m meo.tools.weekly_digest`)
+
+- Reads the last 7 complete days (Mon–Sun in JST) from the state.json archive.
+- For each store shows:
+  - 📝 Posts: count + top-3 themes with frequencies
+  - 💬 Replies: count + compact star-distribution (only non-zero ratings shown)
+- Totals line across all stores.
+- Sends the formatted message to Slack (when `SLACK_WEBHOOK_URL` is set); `--dry-run` prints to stdout instead.
+- Slack send errors are logged as warnings — never block the command.
+
+Example output:
+```
+MEO Automation — 週次サマリー (2026-07-17 〜 2026-07-23)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE BODY 大阪 心斎橋店 (the_body_osaka_shinsaibashi)
+  📝 投稿: 7件  (季節のお手入れ情報 ×3, キャンペーン ×2, スタッフ紹介 ×2)
+  💬 返信: 5件  |  ★★★★★ 3  ★★★★☆ 2
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE BODY 京都店 (the_body_kyoto)
+  📝 投稿: 7件  (スタッフ紹介 ×4, 季節のお手入れ情報 ×3)
+  💬 返信: 3件  |  ★★★★★ 3
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MYBEAR STUDIO 京都店 (mybear_studio_kyoto)
+  📝 投稿: 7件
+  💬 返信: 0件
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+合計: 投稿 21件, 返信 8件
+```
+
+**GitHub Actions**: `.github/workflows/weekly_digest.yml` fires every Monday at 0 UTC (9 AM JST).
+Also supports `workflow_dispatch` with a `dry_run` input for manual testing.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/weekly_digest.py` | New module — 98 statements, 100% covered |
+| `tests/test_weekly_digest.py` | 35 new tests (all helpers, run/send, main()) |
+| `pyproject.toml` | `meo-weekly-digest` entry point added |
+| `.github/workflows/weekly_digest.yml` | New weekly Actions workflow (Mondays 0 UTC) |
+| `README.md` | `meo-weekly-digest` added to CLI tools table and bash examples |
+
+**Key design decisions:**
+- Date window = last 7 complete days in JST (excludes today, since today's run may not have finished).
+- `_filter_by_date()` silently skips entries with invalid/missing `date` fields rather than raising.
+- `_format_star_line()` shows only non-zero ratings to keep the line compact.
+- `_format_theme_line()` caps at `_TOP_THEMES=3` entries.
+- Sends to Slack in live mode; dry_run skips send but still prints to stdout.
+- No Google API calls — the digest reads only from the local state.json cache.
+
+**Test count**: 504 → 539 (+35); coverage: 100% maintained.
 
 ---
 

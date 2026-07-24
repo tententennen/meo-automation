@@ -171,6 +171,7 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-reset` | Reset state for one store or all stores (post guard, image/theme history, reply history) |
 | `meo-discover-locations` | List all GBP accounts and locations — prints ready-to-paste `location_id` values for `config/stores.yaml` (run once after API access is granted) |
 | `meo-stats` | Show aggregate statistics — total posts/replies, activity rates, theme frequency, and star-rating distribution across the full archive |
+| `meo-weekly-digest` | Build and send a 7-day Slack summary of posts and review replies across all stores; `--dry-run` prints to stdout without sending |
 
 ```bash
 # Discover location IDs (run once after GBP API access is approved)
@@ -184,6 +185,10 @@ meo-export held-reviews --output held.csv   # reviews awaiting manual reply
 # Stats (once the tool has been running)
 meo-stats                               # all stores
 meo-stats --store the_body_kyoto        # single store
+
+# Weekly digest (sent automatically every Monday via weekly_digest.yml)
+meo-weekly-digest --dry-run             # preview without sending to Slack
+meo-weekly-digest                       # send to Slack (SLACK_WEBHOOK_URL required)
 
 # Reset examples (use when re-testing or after manual interventions)
 meo-reset post-guard --store the_body_kyoto  # allow a new post today for one store
