@@ -14,8 +14,11 @@ the webContentLink from Drive is tried as a fallback (works only for public file
 from __future__ import annotations
 
 import logging
+import re
 import random
+from datetime import datetime as _datetime, time as _time
 from typing import Any
+from zoneinfo import ZoneInfo as _ZoneInfo
 
 from . import config as cfg
 from .business_profile import BusinessProfileClient
@@ -32,6 +35,50 @@ from .state import (
 )
 
 logger = logging.getLogger(__name__)
+
+_JST = _ZoneInfo("Asia/Tokyo")
+_TIME_WINDOW_PATTERN = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
+
+
+def _parse_time_window(window_str: str) -> tuple[_time, _time]:
+    """Parse a 'HH:MM-HH:MM' string into (start_time, end_time).
+
+    Raises ValueError when the format does not match or the values are out of range.
+    """
+    m = _TIME_WINDOW_PATTERN.match(window_str)
+    if not m:
+        raise ValueError(
+            f"post_time_window_jst must be 'HH:MM-HH:MM', got: {window_str!r}"
+        )
+    sh, sm, eh, em = (int(x) for x in m.groups())
+    # _time() raises ValueError for out-of-range hour/minute — propagate as-is.
+    return _time(sh, sm), _time(eh, em)
+
+
+def _within_post_window(window_str: str | None, now: _time | None = None) -> bool:
+    """Return True if `now` (or the current JST time) is within the posting window.
+
+    Returns True when window_str is None or empty (no time restriction).
+    Handles midnight-crossing windows (e.g. '22:00-06:00').
+    On an invalid window string, logs a warning and returns True so the post
+    is not silently blocked by a misconfiguration that should have been caught
+    at startup by validate_content().
+    """
+    if not window_str:
+        return True
+    if now is None:
+        now = _datetime.now(tz=_JST).time().replace(second=0, microsecond=0)
+    try:
+        start, end = _parse_time_window(window_str)
+    except ValueError:
+        logger.warning("Invalid post_time_window_jst %r; posting anyway.", window_str)
+        return True
+    if start <= end:
+        # Normal window (e.g. 06:00-23:00): both boundary points are inclusive.
+        return start <= now <= end
+    # Midnight-crossing window (e.g. 22:00-06:00): active from start to midnight
+    # and again from midnight to end.
+    return now >= start or now <= end
 
 
 def _pick_theme(store_key: str, themes: list[str]) -> str | None:
@@ -71,13 +118,14 @@ def run_post_for_store(
 
     Returns:
         A result dict with keys: store_key, status, post_name (or error).
-        status is one of: "posted", "dry_run", "skipped".
+        status is one of: "posted", "dry_run", "skipped", "skipped_window".
     """
     store_key = store["key"]
     location_id = store["location_id"]
     folder_id = store["drive_folder_id"]
 
-    cadence_days: int = cfg.effective_defaults(store).get("post_cadence_days", 1)
+    store_defaults = cfg.effective_defaults(store)
+    cadence_days: int = store_defaults.get("post_cadence_days", 1)
 
     if not dry_run and not force and not should_post_today(store_key, cadence_days):
         logger.info(
@@ -85,6 +133,14 @@ def run_post_for_store(
             store_key, cadence_days,
         )
         return {"store_key": store_key, "status": "skipped"}
+
+    window_str: str | None = store_defaults.get("post_time_window_jst")
+    if not force and not _within_post_window(window_str):
+        logger.info(
+            "[%s] Current JST time is outside post_time_window_jst (%s); skipping post.",
+            store_key, window_str or "none",
+        )
+        return {"store_key": store_key, "status": "skipped_window"}
 
     # --- Theme selection (prefer themes not used recently) ---
     content_conf = cfg.content()

@@ -247,3 +247,20 @@ def test_payload_contains_store_key(monkeypatch):
         send_run_summary(results, dry_run=False)
     sent_text = mock_post.call_args[1]["json"]["text"]
     assert "mybear_studio_kyoto" in sent_text
+
+
+def test_format_post_skipped_window_shows_time_window_label():
+    """status='skipped_window' must render as 'skipped (time window)' — not the raw
+    internal status string — so the owner immediately understands why no post went out.
+    """
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "skipped_window"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "skipped (time window)" in msg
+    # The raw internal status name must not appear verbatim.
+    assert "skipped_window" not in msg

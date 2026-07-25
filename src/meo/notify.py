@@ -67,6 +67,8 @@ def _format_message(results: list[dict[str, Any]], *, dry_run: bool) -> str:
             if post.get("error"):
                 post_part = f"post: ❌ {post['error']}"
                 had_error = True
+            elif post.get("status") == "skipped_window":
+                post_part = "post: skipped (time window)"
             else:
                 status = post.get("status", "—")
                 theme = post.get("theme", "")

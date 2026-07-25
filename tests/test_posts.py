@@ -1,5 +1,6 @@
 """Tests for local post creation — fully mocked, no Google credentials needed."""
 
+from datetime import time
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -460,3 +461,163 @@ def test_drive_error_does_not_emit_no_images_warning(caplog):
     assert not any("No images found" in m for m in warning_msgs), (
         f"Expected no 'No images found' duplicate WARNING after Drive error, got: {warning_msgs}"
     )
+
+
+# ---------------------------------------------------------------------------
+# _parse_time_window
+# ---------------------------------------------------------------------------
+
+def test_parse_time_window_valid_returns_start_and_end_times():
+    from meo.posts import _parse_time_window
+    start, end = _parse_time_window("06:00-23:00")
+    assert start == time(6, 0)
+    assert end == time(23, 0)
+
+
+def test_parse_time_window_midnight_crossing_values():
+    from meo.posts import _parse_time_window
+    start, end = _parse_time_window("22:30-06:15")
+    assert start == time(22, 30)
+    assert end == time(6, 15)
+
+
+def test_parse_time_window_bad_format_raises_value_error():
+    from meo.posts import _parse_time_window
+    with pytest.raises(ValueError, match="HH:MM-HH:MM"):
+        _parse_time_window("6:0-23:0")  # missing leading zeros
+
+
+def test_parse_time_window_missing_dash_raises_value_error():
+    from meo.posts import _parse_time_window
+    with pytest.raises(ValueError, match="HH:MM-HH:MM"):
+        _parse_time_window("06:0023:00")
+
+
+def test_parse_time_window_out_of_range_hour_raises_value_error():
+    from meo.posts import _parse_time_window
+    with pytest.raises(ValueError):
+        _parse_time_window("25:00-23:00")
+
+
+# ---------------------------------------------------------------------------
+# _within_post_window
+# ---------------------------------------------------------------------------
+
+def test_within_post_window_none_always_returns_true():
+    from meo.posts import _within_post_window
+    assert _within_post_window(None) is True
+
+
+def test_within_post_window_empty_string_always_returns_true():
+    from meo.posts import _within_post_window
+    assert _within_post_window("") is True
+
+
+def test_within_post_window_inside_normal_range_returns_true():
+    from meo.posts import _within_post_window
+    assert _within_post_window("06:00-23:00", now=time(10, 0)) is True
+
+
+def test_within_post_window_outside_normal_range_returns_false():
+    from meo.posts import _within_post_window
+    assert _within_post_window("06:00-23:00", now=time(2, 0)) is False
+
+
+def test_within_post_window_at_exact_start_returns_true():
+    from meo.posts import _within_post_window
+    assert _within_post_window("06:00-23:00", now=time(6, 0)) is True
+
+
+def test_within_post_window_at_exact_end_returns_true():
+    from meo.posts import _within_post_window
+    assert _within_post_window("06:00-23:00", now=time(23, 0)) is True
+
+
+def test_within_post_window_midnight_crossing_inside_returns_true():
+    from meo.posts import _within_post_window
+    # "22:00-06:00": active from 22:00 through midnight to 06:00
+    assert _within_post_window("22:00-06:00", now=time(23, 30)) is True
+
+
+def test_within_post_window_midnight_crossing_early_morning_inside_returns_true():
+    from meo.posts import _within_post_window
+    assert _within_post_window("22:00-06:00", now=time(3, 0)) is True
+
+
+def test_within_post_window_midnight_crossing_outside_returns_false():
+    from meo.posts import _within_post_window
+    assert _within_post_window("22:00-06:00", now=time(12, 0)) is False
+
+
+def test_within_post_window_invalid_format_returns_true_with_warning(caplog):
+    """A malformed window string (that should have been caught at startup) must
+    not silently block posts — log a warning and return True.
+    """
+    import logging
+    from meo.posts import _within_post_window
+    with caplog.at_level(logging.WARNING, logger="meo.posts"):
+        result = _within_post_window("not-valid", now=time(10, 0))
+    assert result is True
+    assert any("Invalid post_time_window_jst" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# run_post_for_store — time-window guard integration
+# ---------------------------------------------------------------------------
+
+def test_run_post_skips_when_outside_time_window():
+    """When the current time is outside post_time_window_jst, the post is skipped
+    and generate_post is never called (avoids an LLM API call).
+    """
+    gbp, drive, _ = _make_mocks()
+    store_with_window = {**_STORE, "overrides": {"post_time_window_jst": "06:00-23:00"}}
+    with patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.cfg.effective_defaults", return_value={
+             "post_cadence_days": 1,
+             "post_time_window_jst": "06:00-23:00",
+         }), \
+         patch("meo.posts._within_post_window", return_value=False) as mock_window, \
+         patch("meo.posts.generate_post") as mock_gen:
+        result = run_post_for_store(store_with_window, gbp, drive)
+
+    assert result["status"] == "skipped_window"
+    mock_gen.assert_not_called()
+    gbp.create_local_post.assert_not_called()
+
+
+def test_run_post_force_bypasses_time_window():
+    """force=True must bypass the time-window guard so posts can go out at any hour."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"), \
+         patch("meo.posts.cfg.effective_defaults", return_value={
+             "post_cadence_days": 1,
+             "post_time_window_jst": "06:00-23:00",
+         }), \
+         patch("meo.posts._within_post_window", return_value=False):
+        result = run_post_for_store(_STORE, gbp, drive, force=True)
+
+    # The window returned False, but force=True bypasses it — post should go through.
+    assert result["status"] == "posted"
+    gbp.create_local_post.assert_called_once()
+
+
+def test_run_post_dry_run_skips_when_outside_time_window():
+    """dry_run also respects the time window (faithfully simulates a live run)."""
+    gbp, drive, _ = _make_mocks()
+    with patch("meo.posts.cfg.effective_defaults", return_value={
+             "post_cadence_days": 1,
+             "post_time_window_jst": "06:00-23:00",
+         }), \
+         patch("meo.posts._within_post_window", return_value=False), \
+         patch("meo.posts.generate_post") as mock_gen:
+        result = run_post_for_store(_STORE, gbp, drive, dry_run=True)
+
+    assert result["status"] == "skipped_window"
+    mock_gen.assert_not_called()

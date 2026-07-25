@@ -1,6 +1,105 @@
 # PROGRESS
 
-## Status: All milestones complete — 539/539 tests green (100% coverage)
+## Status: All milestones complete — 567/567 tests green (100% coverage)
+
+---
+
+## Completed this run (run 58)
+
+### feat(posts): add configurable posting time window (`post_time_window_jst`)
+
+**Problem**: The daily GitHub Actions job fires at 0 UTC = 9 AM JST, which is ideal for
+regular posting.  However, two other paths can post at unexpected hours:
+
+- **`--force` reruns** after a failure: an operator running `meo-run --force` at 23:30 JST
+  to recover from an earlier error would post a 最新情報 at midnight — an unusual time for
+  a beauty salon or fitness studio post to appear on Google Maps.
+- **`workflow_dispatch` triggers**: manually triggered CI runs have no time restriction,
+  so an operator pressing "Run workflow" in the evening bypasses the scheduled 9 AM slot.
+
+The tool had no way to prevent this.  Any LLM call for post content or photo selection
+from Drive that fired outside business hours would complete and publish successfully.
+
+**Fix**: Added a `post_time_window_jst` setting to `config/content.yaml` defaults and to
+the per-store override system.  When set, `run_post_for_store()` checks the current JST
+time against the window **before** generating content (before calling the LLM or Drive API)
+and returns `{"status": "skipped_window"}` when the current time falls outside it.
+
+```yaml
+# config/content.yaml — new field in defaults:
+post_time_window_jst: "06:00-23:00"  # only post within this JST range (HH:MM-HH:MM)
+```
+
+**Behaviour by case:**
+
+| Scenario | Behaviour |
+|---|---|
+| Current JST time inside window | Posts normally — no change from before |
+| Current JST time outside window | Skips post; logs INFO; returns `skipped_window` |
+| `--force` flag active | Bypasses window guard (along with cadence guard) |
+| `post_time_window_jst` absent or blank | No restriction; posts at any hour |
+| Per-store override (e.g. `overrides: {post_time_window_jst: "08:00-21:00"}`) | Store-specific window |
+| Midnight-crossing window (e.g. `"22:00-06:00"`) | Correctly handled (active after 22:00 and before 06:00) |
+
+**Slack notification**: `"skipped_window"` renders as `"post: skipped (time window)"` rather
+than the raw internal status string, so the owner can see at a glance why no post went out.
+
+**`_within_post_window` is testable**: the function accepts an optional `now` argument
+(a `datetime.time`) so tests inject specific times rather than freezing the clock.
+
+**Validator**: `post_time_window_jst` is validated at startup by `validate_content()`:
+- Must be a string
+- Must match `HH:MM-HH:MM`
+- Hour must be 00–23, minute 00–59
+- Also added to `_ALLOWED_OVERRIDE_KEYS` so per-store overrides are accepted
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `config/content.yaml` | `post_time_window_jst: "06:00-23:00"` added to `defaults` |
+| `src/meo/posts.py` | `import re`, `from datetime import …, time`, `from zoneinfo …`; `_JST`, `_TIME_WINDOW_PATTERN`, `_parse_time_window()`, `_within_post_window()` added; `run_post_for_store()` reads `store_defaults` (was `cfg.effective_defaults()` inline), checks window after cadence guard |
+| `src/meo/validator.py` | `import re`; `_TIME_WINDOW_PATTERN`; `post_time_window_jst` in `_ALLOWED_OVERRIDE_KEYS`; format + range validation in `validate_content()` |
+| `src/meo/notify.py` | `_format_message()`: `"skipped_window"` special case → `"post: skipped (time window)"` |
+| `src/meo/config.py` | `effective_defaults` docstring updated to list `post_time_window_jst` |
+| `tests/test_posts.py` | `from datetime import time` import added; 17 new tests (see below) |
+| `tests/test_validator.py` | 11 new tests (see below) |
+| `tests/test_notify.py` | 1 new test (see below) |
+
+**New tests (+28 tests, 539 → 567):**
+
+| File | Test | What it covers |
+|---|---|---|
+| `tests/test_posts.py` | `test_parse_time_window_valid_returns_start_and_end_times` | `"06:00-23:00"` → `time(6,0), time(23,0)` |
+| `tests/test_posts.py` | `test_parse_time_window_midnight_crossing_values` | `"22:30-06:15"` → correct times |
+| `tests/test_posts.py` | `test_parse_time_window_bad_format_raises_value_error` | `"6:0-23:0"` → ValueError |
+| `tests/test_posts.py` | `test_parse_time_window_missing_dash_raises_value_error` | `"0600-2300"` → ValueError |
+| `tests/test_posts.py` | `test_parse_time_window_out_of_range_hour_raises_value_error` | `"25:00-23:00"` → ValueError |
+| `tests/test_posts.py` | `test_within_post_window_none_always_returns_true` | `None` → True |
+| `tests/test_posts.py` | `test_within_post_window_empty_string_always_returns_true` | `""` → True |
+| `tests/test_posts.py` | `test_within_post_window_inside_normal_range_returns_true` | `"06:00-23:00"`, now=10:00 → True |
+| `tests/test_posts.py` | `test_within_post_window_outside_normal_range_returns_false` | `"06:00-23:00"`, now=02:00 → False |
+| `tests/test_posts.py` | `test_within_post_window_at_exact_start_returns_true` | now=06:00 → True (inclusive boundary) |
+| `tests/test_posts.py` | `test_within_post_window_at_exact_end_returns_true` | now=23:00 → True (inclusive boundary) |
+| `tests/test_posts.py` | `test_within_post_window_midnight_crossing_inside_returns_true` | `"22:00-06:00"`, now=23:30 → True |
+| `tests/test_posts.py` | `test_within_post_window_midnight_crossing_early_morning_inside_returns_true` | `"22:00-06:00"`, now=03:00 → True |
+| `tests/test_posts.py` | `test_within_post_window_midnight_crossing_outside_returns_false` | `"22:00-06:00"`, now=12:00 → False |
+| `tests/test_posts.py` | `test_within_post_window_invalid_format_returns_true_with_warning` | bad string → True + WARNING logged |
+| `tests/test_posts.py` | `test_run_post_skips_when_outside_time_window` | `_within_post_window=False` → `skipped_window`; `generate_post` not called |
+| `tests/test_posts.py` | `test_run_post_force_bypasses_time_window` | `force=True` + `_within_post_window=False` → posts normally |
+| `tests/test_posts.py` | `test_run_post_dry_run_skips_when_outside_time_window` | `dry_run=True` + `_within_post_window=False` → `skipped_window` |
+| `tests/test_validator.py` | `test_validate_content_post_time_window_jst_absent_is_valid` | absent → no error |
+| `tests/test_validator.py` | `test_validate_content_post_time_window_jst_valid_format` | `"06:00-23:00"` → no error |
+| `tests/test_validator.py` | `test_validate_content_post_time_window_jst_midnight_crossing_valid` | `"22:00-06:00"` → no error |
+| `tests/test_validator.py` | `test_validate_content_post_time_window_jst_bad_format_no_leading_zeros` | `"6:0-23:0"` → error |
+| `tests/test_validator.py` | `test_validate_content_post_time_window_jst_bad_format_no_dash` | `"0600-2300"` → error |
+| `tests/test_validator.py` | `test_validate_content_post_time_window_jst_non_string_is_invalid` | `600` (int) → error |
+| `tests/test_validator.py` | `test_validate_content_post_time_window_jst_out_of_range_hour` | `"25:00-23:00"` → error |
+| `tests/test_validator.py` | `test_validate_content_post_time_window_jst_out_of_range_minute` | `"06:60-23:00"` → error |
+| `tests/test_validator.py` | `test_validate_stores_override_post_time_window_jst_is_allowed` | override key accepted |
+| `tests/test_notify.py` | `test_format_post_skipped_window_shows_time_window_label` | `status=skipped_window` → `"skipped (time window)"` in Slack message; raw `"skipped_window"` absent |
+
+**Coverage change:** 1529 → 1778 statements (250 new statements from new code and tests), 0 miss, **100% maintained**.
 
 ---
 

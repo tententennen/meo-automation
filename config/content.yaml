@@ -11,6 +11,7 @@ defaults:
   max_review_age_days: 90             # skip unreplied reviews older than this many days (0 = no limit; prevents mass-replying to old reviews on first run)
   recent_post_context_count: 3        # number of recent post snippets injected into the LLM prompt to encourage content variety (0 = disable)
   recent_reply_context_count: 3       # number of recent reply snippets injected into the reply LLM prompt to encourage reply variety (0 = disable)
+  post_time_window_jst: "06:00-23:00" # only post within this JST time range (HH:MM-HH:MM); omit or leave blank to post at any hour; --force bypasses this guard
 
 # Industry-specific tone profiles (used in the LLM prompt)
 industry_tones:

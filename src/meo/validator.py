@@ -8,6 +8,7 @@ mid-run when the first API call fails.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from . import config as cfg
@@ -27,7 +28,10 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "max_review_age_days",
     "recent_post_context_count",
     "recent_reply_context_count",
+    "post_time_window_jst",
 })
+
+_TIME_WINDOW_PATTERN = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
 
 
 def validate_env(content_conf: dict[str, Any] | None = None) -> list[str]:
@@ -174,6 +178,28 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
                 "content.yaml: defaults.recent_reply_context_count must be an integer >= 0 "
                 "(omit to use the default of 3; set to 0 to disable recent-reply context)"
             )
+
+        window = defaults.get("post_time_window_jst")
+        if window is not None:
+            if not isinstance(window, str):
+                errors.append(
+                    "content.yaml: defaults.post_time_window_jst must be a string "
+                    "in 'HH:MM-HH:MM' format (e.g. '06:00-23:00')"
+                )
+            else:
+                m = _TIME_WINDOW_PATTERN.match(window)
+                if not m:
+                    errors.append(
+                        f"content.yaml: defaults.post_time_window_jst {window!r} must match "
+                        "'HH:MM-HH:MM' format (e.g. '06:00-23:00')"
+                    )
+                else:
+                    sh, sm, eh, em = (int(x) for x in m.groups())
+                    if not (0 <= sh <= 23 and 0 <= sm <= 59 and 0 <= eh <= 23 and 0 <= em <= 59):
+                        errors.append(
+                            f"content.yaml: defaults.post_time_window_jst {window!r} contains "
+                            "out-of-range hour or minute values"
+                        )
 
     return errors
 

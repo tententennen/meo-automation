@@ -527,3 +527,71 @@ def test_main_no_env_still_catches_config_errors(capsys):
     out = capsys.readouterr().out
     assert "FAILED" in out
     assert "llm" in out
+
+
+# ---------------------------------------------------------------------------
+# validate_content — post_time_window_jst
+# ---------------------------------------------------------------------------
+
+def _content_with_window(window):
+    """Return a content dict with post_time_window_jst set to the given value."""
+    import copy
+    data = copy.deepcopy(_VALID_CONTENT)
+    data["defaults"]["post_time_window_jst"] = window
+    return data
+
+
+def test_validate_content_post_time_window_jst_absent_is_valid():
+    """post_time_window_jst is optional — omitting it must not produce errors."""
+    errors = v.validate_content(_VALID_CONTENT)
+    assert errors == []
+
+
+def test_validate_content_post_time_window_jst_valid_format():
+    errors = v.validate_content(_content_with_window("06:00-23:00"))
+    assert errors == []
+
+
+def test_validate_content_post_time_window_jst_midnight_crossing_valid():
+    errors = v.validate_content(_content_with_window("22:00-06:00"))
+    assert errors == []
+
+
+def test_validate_content_post_time_window_jst_bad_format_no_leading_zeros():
+    errors = v.validate_content(_content_with_window("6:0-23:0"))
+    assert any("post_time_window_jst" in e for e in errors)
+    assert any("HH:MM-HH:MM" in e for e in errors)
+
+
+def test_validate_content_post_time_window_jst_bad_format_no_dash():
+    errors = v.validate_content(_content_with_window("0600-2300"))
+    assert any("post_time_window_jst" in e for e in errors)
+
+
+def test_validate_content_post_time_window_jst_non_string_is_invalid():
+    errors = v.validate_content(_content_with_window(600))
+    assert any("post_time_window_jst" in e for e in errors)
+
+
+def test_validate_content_post_time_window_jst_out_of_range_hour():
+    errors = v.validate_content(_content_with_window("25:00-23:00"))
+    assert any("post_time_window_jst" in e for e in errors)
+    assert any("out-of-range" in e for e in errors)
+
+
+def test_validate_content_post_time_window_jst_out_of_range_minute():
+    errors = v.validate_content(_content_with_window("06:60-23:00"))
+    assert any("post_time_window_jst" in e for e in errors)
+    assert any("out-of-range" in e for e in errors)
+
+
+def test_validate_stores_override_post_time_window_jst_is_allowed():
+    """post_time_window_jst is accepted as a per-store override key."""
+    stores = {
+        "store_a": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"post_time_window_jst": "08:00-21:00"},
+        }
+    }
+    errors = v.validate_stores(stores)
+    assert errors == []
