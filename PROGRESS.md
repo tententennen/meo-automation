@@ -1,6 +1,84 @@
 # PROGRESS
 
-## Status: All milestones complete — 567/567 tests green (100% coverage)
+## Status: All milestones complete — 608/608 tests green (100% coverage)
+
+---
+
+## Completed this run (run 59)
+
+### feat(tools): add `meo-photo-audit` — Drive photo inventory status per store
+
+**Gap**: The daily runner silently posts without a photo when a store's Drive folder
+has no fresh (unrecently-used) images available.  The owner had no way to know in
+advance that a folder was running low — the only signal was the absence of a photo
+on the live post.
+
+**New command**: `meo-photo-audit` (also `python -m meo.tools.photo_audit`)
+
+Runs in two modes:
+
+**Offline (default) — no credentials needed:**
+Reads `logs/state.json` only.  For each store shows:
+- Whether `drive_folder_id` is configured or still a TODO placeholder
+- How many recently-used image IDs are tracked in state.json
+- A warning for unconfigured stores
+
+**Live (`--live`) — queries Drive API (requires Google credentials):**
+Connects to Drive using the same auth as the main runner.  For each store shows:
+- Total images in the folder
+- Fresh images (not in recent-use history) vs. recently used
+- Per-image listing with `✓ fresh` / `⟳ used` markers
+- Warning when fewer than 7 fresh photos remain (threshold: `_LOW_PHOTO_WARNING_THRESHOLD`)
+- Warning when the folder is completely empty
+
+**Exit codes:**
+- `0` — all stores clean (no warnings)
+- `1` — one or more stores have warnings (unconfigured folder, low photos, Drive error)
+
+**Example output (offline mode):**
+```
+MEO Automation — Photo Inventory Audit
+Generated: 2026-07-26 09:00 JST  |  Mode: OFFLINE (state.json only)
+────────────────────────────────────────────────────────
+THE BODY 大阪 心斎橋店  (the_body_osaka_shinsaibashi)
+  Drive folder: ✓  folder_osaka_abc123
+  Recently used (state.json): 3 image ID(s)
+────────────────────────────────────────────────────────
+```
+
+**Example output (live mode, low photos):**
+```
+THE BODY 京都店  (the_body_kyoto)
+  Drive folder: ✓  folder_kyoto_xyz789
+  Recently used (state.json): 5 image ID(s)
+  Folder total: 6  →  Fresh: 1  Recently used: 5
+  Photos:
+    ⟳ used   autumn_promo.jpg
+    ✓ fresh  exterior.jpg
+    ⟳ used   lobby.jpg
+    ⟳ used   reception.jpg
+    ⟳ used   staff_yamada.jpg
+    ⟳ used   treatment.jpg
+  ⚠  Only 1 fresh photo(s) remain (threshold: 7) — consider uploading more photos to Drive
+```
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/photo_audit.py` | New module — 95 statements, 100% covered |
+| `tests/test_photo_audit.py` | 41 new tests (offline, live, format, main()) |
+| `pyproject.toml` | `meo-photo-audit` entry point added |
+| `README.md` | `meo-photo-audit` added to CLI tools table and bash examples |
+
+**New tests (+41 tests, 567 → 608):**
+- `run_photo_audit` offline: 8 tests (result shape, configured/unconfigured, recent IDs, empty folder_id)
+- `run_photo_audit` live: 9 tests (folder count, fresh calc, threshold boundary, empty/error/skip-unconfigured)
+- `_format_output` offline: 7 tests (labels, folder status, recent count, warnings)
+- `_format_output` live: 8 tests (label, totals, markers, sorted photos, error fallback)
+- `main()`: 9 tests (exit codes, store filter, unknown key, live init, credentials, stdout output)
+
+**Coverage change:** 1778 → 1873 statements (95 new), 0 miss, **100% maintained**.
 
 ---
 
@@ -4233,7 +4311,7 @@ If everything looks right, run without `--dry-run` (or trigger the GitHub Action
 
 ## Next milestone
 
-All code is complete and the test suite is green (504/504, 100% coverage).
+All code is complete and the test suite is green (608/608, 100% coverage).
 **The only remaining work is human action** (Steps 1–8 above).
 
 After API access is granted and `config/stores.yaml` is filled in:

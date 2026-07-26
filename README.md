@@ -172,6 +172,7 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-discover-locations` | List all GBP accounts and locations — prints ready-to-paste `location_id` values for `config/stores.yaml` (run once after API access is granted) |
 | `meo-stats` | Show aggregate statistics — total posts/replies, activity rates, theme frequency, and star-rating distribution across the full archive |
 | `meo-weekly-digest` | Build and send a 7-day Slack summary of posts and review replies across all stores; `--dry-run` prints to stdout without sending |
+| `meo-photo-audit` | Audit Drive photo inventory per store — shows recently-used images (offline, no credentials) or full folder contents with fresh/used breakdown and low-photo warnings (add `--live` for Drive API query) |
 
 ```bash
 # Discover location IDs (run once after GBP API access is approved)
@@ -189,6 +190,11 @@ meo-stats --store the_body_kyoto        # single store
 # Weekly digest (sent automatically every Monday via weekly_digest.yml)
 meo-weekly-digest --dry-run             # preview without sending to Slack
 meo-weekly-digest                       # send to Slack (SLACK_WEBHOOK_URL required)
+
+# Photo audit (check Drive photo inventory)
+meo-photo-audit                         # offline: shows recent image IDs from state.json (no credentials)
+meo-photo-audit --live                  # live: queries Drive for folder contents + fresh/used breakdown
+meo-photo-audit --live --store the_body_kyoto  # single-store live audit
 
 # Reset examples (use when re-testing or after manual interventions)
 meo-reset post-guard --store the_body_kyoto  # allow a new post today for one store
