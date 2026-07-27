@@ -106,6 +106,19 @@ jobs:
           fi
           python -m meo.main $ARGS
 
+      # Alert immediately when low-star reviews are held for manual reply.
+      # This step runs after the main automation so the held-review snapshot in
+      # state.json is up-to-date.  Exits 0 when no reviews are waiting (no alert
+      # sent); exits 1 when held reviews exist (Slack alert fired).  The step is
+      # always non-fatal (continue-on-error) so a review-alert failure never
+      # blocks the state-save or log-upload steps that follow.
+      - name: Alert on held reviews
+        if: always()
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m meo.tools.review_alert || true
+
       # Save state after the run so the next run's duplicate guard has context.
       # continue-on-error: true guards against the first-ever run where state.json
       # may not exist (e.g., dry-run with no stores configured).

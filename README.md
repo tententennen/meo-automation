@@ -173,6 +173,7 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-stats` | Show aggregate statistics — total posts/replies, activity rates, theme frequency, and star-rating distribution across the full archive |
 | `meo-weekly-digest` | Build and send a 7-day Slack summary of posts and review replies across all stores; `--dry-run` prints to stdout without sending |
 | `meo-photo-audit` | Audit Drive photo inventory per store — shows recently-used images (offline, no credentials) or full folder contents with fresh/used breakdown and low-photo warnings (add `--live` for Drive API query) |
+| `meo-review-alert` | Check for reviews held for manual reply and send an urgent Slack alert; exits 0 when none pending, exits 1 when held reviews exist (also runs automatically after each daily CI job) |
 
 ```bash
 # Discover location IDs (run once after GBP API access is approved)
@@ -195,6 +196,11 @@ meo-weekly-digest                       # send to Slack (SLACK_WEBHOOK_URL requi
 meo-photo-audit                         # offline: shows recent image IDs from state.json (no credentials)
 meo-photo-audit --live                  # live: queries Drive for folder contents + fresh/used breakdown
 meo-photo-audit --live --store the_body_kyoto  # single-store live audit
+
+# Review alert (check for held reviews and alert via Slack)
+meo-review-alert                        # alert if held reviews exist (exits 1), silent if none (exits 0)
+meo-review-alert --dry-run              # print alert to stdout, skip Slack
+meo-review-alert --store the_body_kyoto # check one store
 
 # Reset examples (use when re-testing or after manual interventions)
 meo-reset post-guard --store the_body_kyoto  # allow a new post today for one store

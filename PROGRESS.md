@@ -1,6 +1,90 @@
 # PROGRESS
 
-## Status: All milestones complete — 608/608 tests green (100% coverage)
+## Status: All milestones complete — 650/650 tests green (100% coverage)
+
+---
+
+## Completed this run (run 60)
+
+### feat(tools): add `meo-review-alert` — urgent Slack alert for held (low-star) reviews
+
+**Gap**: The existing `notify.py` run-summary mentions held reviews inline as
+`"2 need manual reply"` inside the per-store Slack line. This is easy to miss:
+the message is sent once per daily run and buries the critical information
+alongside post status and reply counts. A business owner who needs to respond
+quickly to a 1-star or 2-star review (before it affects reputation) might not
+notice this detail until they happen to re-read the run summary.
+
+**Fix**: New command `meo-review-alert` (also `python -m meo.tools.review_alert`)
+that reads the held-review snapshot from `logs/state.json` and sends a dedicated
+urgent Slack message listing every pending review with star rating, reviewer name,
+date, and a 80-character comment preview.
+
+**Behaviour:**
+
+| Scenario | Behaviour |
+|---|---|
+| No held reviews | Prints notice to stderr; exits 0; no Slack message |
+| Held reviews exist | Formats and prints the alert to stdout; sends to Slack; exits 1 |
+| `--dry-run` | Prints alert to stdout; skips Slack send; exits 1 |
+| `--store KEY` | Checks only the specified store(s) |
+| Unknown `--store KEY` | Error message + exits 1 |
+| `SLACK_WEBHOOK_URL` not set | Warning logged; exits 1 (held reviews detected; state is the ground truth) |
+
+**Exit-code contract**: Exit 1 when held reviews exist means CI can detect the
+condition (`meo-review-alert || true` in the workflow keeps the step non-fatal
+while still triggering the alert). This matches the same contract as `meo-photo-audit`.
+
+**Alert format (Slack):**
+```
+⚠️ MEO レビューアラート — 2件のレビューが手動返信待ちです
+
+────────────────────────────────────────
+THE BODY 大阪 心斎橋店 (the_body_osaka_shinsaibashi) — 2件
+
+  ★☆☆☆☆  *田中様*  2026-07-25
+  「期待していたほどではありませんでした。スタッフの対応に改善が必要だと感じます。」
+
+  ★★☆☆☆  *佐藤様*  2026-07-26
+  「少し待ち時間が長かったです。」
+
+────────────────────────────────────────
+`meo-export held-reviews` で詳細を確認し、手動で返信してください。
+```
+
+**GitHub Actions integration**: Added `Alert on held reviews` step to
+`daily_run.yml` that runs after `Run MEO automation`, always (`if: always()`),
+non-fatal (`continue-on-error: true`). This ensures the owner is alerted
+immediately when a low-star review is detected, without any manual step.
+
+**No Google credentials needed**: Reads only `logs/state.json` — the same
+read-only pattern as `meo-photo-audit`, `meo-stats`, and `meo-weekly-digest`.
+The snapshot is written by the main runner during the reviews step.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/review_alert.py` | New module — 90 statements, 100% covered |
+| `tests/test_review_alert.py` | 42 new tests (star_symbol, run, format, send, main()) |
+| `pyproject.toml` | `meo-review-alert` entry point added |
+| `.github/workflows/daily_run.yml` | `Alert on held reviews` step added after main run |
+| `README.md` | `meo-review-alert` added to CLI tools table and bash examples |
+
+**New tests (+42 tests, 608 → 650):**
+
+- `_star_symbol`: 6 tests (FIVE, ONE, THREE, unknown, empty, lowercase)
+- `run_review_alert`: 7 tests (no held, one store, multiple stores, store name,
+  review entries, store filter, filter excludes unchecked stores)
+- `_format_alert`: 17 tests (header count, alert label, store name/key, reviewer,
+  star symbol, date, comment preview, truncation, short comment, no comment,
+  anonymous reviewer, footer command, multiple stores, review_date priority,
+  date fallback)
+- `_send_alert`: 5 tests (no URL, success, HTTP error, network error, JSON payload)
+- `main()`: 7 tests (exit 0 no reviews, exit 1 with reviews, dry-run no send,
+  dry-run prints alert, live sends alert, unknown store exits 1, store filter)
+
+**Coverage change:** 1873 → 1963 statements (90 new), 0 miss, **100% maintained**.
 
 ---
 
