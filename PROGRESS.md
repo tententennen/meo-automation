@@ -1,6 +1,97 @@
 # PROGRESS
 
-## Status: All milestones complete — 650/650 tests green (100% coverage)
+## Status: All milestones complete — 695/695 tests green (100% coverage)
+
+---
+
+## Completed this run (run 61)
+
+### feat(tools): add `meo-monthly-digest` — previous-month Slack summary
+
+**Gap**: The notification cadence had two time resolutions with nothing in between:
+- **Weekly digest** (`meo-weekly-digest`, fires every Monday) — rolling 7-day window; good
+  for week-by-week tracking but too short to see monthly trends.
+- **All-time stats** (`meo-stats`) — aggregate across the full archive with no time bound;
+  useful for long-term analysis but not useful for "how did last month go?"
+
+A business owner running three stores wants a **monthly view** on the 1st of each month:
+total posts published, total reviews replied to, full star-rating distribution, and which
+themes dominated the previous month's content. This is the question they want answered
+at the monthly business review without opening a CSV or running any manual command.
+
+**New command**: `meo-monthly-digest` (also `python -m meo.tools.monthly_digest`)
+
+**Time window**: Previous full calendar month in JST.
+- Called on 2026-08-01 → covers 2026-07-01 to 2026-07-31
+- Called on 2026-08-15 → still 2026-07-01 to 2026-07-31 (always the last complete month)
+- January wraps correctly to December of the previous year
+- February end date respects the actual calendar (28/29 days)
+
+**Key differences from weekly digest:**
+
+| Feature | `meo-weekly-digest` | `meo-monthly-digest` |
+|---|---|---|
+| Time window | Rolling last 7 complete days | Previous full calendar month |
+| Header label | `週次サマリー (2026-07-17 〜 2026-07-23)` | `月次サマリー (2026年7月)` |
+| Theme depth | Top 3 themes | Top 5 themes (more data, richer view) |
+| Star distribution | Non-zero only | **All 5 ratings, including zeros** |
+| GitHub Actions trigger | Every Monday 0 UTC | 1st of each month 0 UTC |
+| Workflow file | `weekly_digest.yml` | `monthly_digest.yml` |
+
+**Why all-5-ratings in the monthly view**: With a full month's data (typically 20–30 reply
+entries per store), showing even the zero-count ratings is informative: "★☆☆☆☆ 0" is
+reassuring — it tells the owner no 1-star reviews needed manual attention last month.
+The weekly view keeps only non-zero to stay compact for short windows where most
+ratings may be zero.
+
+**Example output:**
+```
+MEO Automation — 月次サマリー (2026年7月)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE BODY 大阪 心斎橋店 (the_body_osaka_shinsaibashi)
+  📝 投稿: 31件  (季節のお手入れ情報 ×9, キャンペーン ×8, スタッフ紹介 ×7, 新メニュー ×4, お知らせ ×3)
+  💬 返信: 18件  |  ★★★★★ 11  ★★★★☆ 4  ★★★☆☆ 2  ★★☆☆☆ 1  ★☆☆☆☆ 0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE BODY 京都店 (the_body_kyoto)
+  📝 投稿: 31件  (スタッフ紹介 ×10, 季節のお手入れ情報 ×9, キャンペーン ×7, 新メニュー ×3, お知らせ ×2)
+  💬 返信: 12件  |  ★★★★★ 10  ★★★★☆ 2  ★★★☆☆ 0  ★★☆☆☆ 0  ★☆☆☆☆ 0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MYBEAR STUDIO 京都店 (mybear_studio_kyoto)
+  📝 投稿: 31件
+  💬 返信: 5件  |  ★★★★★ 4  ★★★★☆ 1  ★★★☆☆ 0  ★★☆☆☆ 0  ★☆☆☆☆ 0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+合計: 投稿 93件, 返信 35件
+```
+
+**No Google credentials needed**: Reads only `logs/state.json` — the same offline pattern
+as `meo-photo-audit`, `meo-stats`, `meo-weekly-digest`, and `meo-review-alert`.
+The archive is written by the main runner during the posts and reviews steps.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/monthly_digest.py` | New module — 102 statements, 100% covered |
+| `tests/test_monthly_digest.py` | 45 new tests (month_range, month_label, filter, format helpers, run, send, main()) |
+| `pyproject.toml` | `meo-monthly-digest` entry point added |
+| `.github/workflows/monthly_digest.yml` | New monthly Actions workflow (1st of month, 0 UTC) |
+| `README.md` | `meo-monthly-digest` added to CLI tools table and bash examples |
+
+**New tests (+45 tests, 650 → 695):**
+
+- `_month_range`: 4 tests (first of month, mid-month, January→December, February end)
+- `_month_label`: 4 tests (July, January, December, year inclusion)
+- `_filter_by_date`: 6 tests (in-range, before-start, after-end, boundary, invalid dates, empty)
+- `_format_theme_line`: 5 tests (empty, no-theme key, single, sorted by frequency, caps at 5)
+- `_format_star_line`: 5 tests (empty, all-five-including-zeros, pipe separator, order, counts)
+- `_format_store_block`: 4 tests (name/key, post count, reply count, zero counts)
+- `_format_digest`: 5 tests (month label, totals, zeros, all stores, no date-range in header)
+- `_send_to_slack`: 4 tests (no URL, success, network error, HTTP error)
+- `run_monthly_digest`: 5 tests (dry-run no send, live sends, history filtering, month label, excludes out-of-month)
+- `main()`: 3 tests (dry-run stdout, live sends, dry-run no send)
+
+**Coverage change:** 1963 → 2065 statements (102 new), 0 miss, **100% maintained**.
 
 ---
 

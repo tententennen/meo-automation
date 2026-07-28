@@ -1,0 +1,51 @@
+name: Monthly MEO Digest
+
+on:
+  schedule:
+    # 1st of each month at 0 UTC = 9 AM JST
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (print to stdout only, skip Slack send)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # Restore the most recent saved state so the digest reads the full
+      # previous-month archive rather than an empty state.json.
+      - name: Restore post state
+        uses: actions/cache/restore@v4
+        with:
+          path: logs/state.json
+          key: meo-state-${{ github.run_id }}
+          restore-keys: |
+            meo-state-
+
+      - name: Install dependencies
+        run: pip install cffi && pip install -e .
+
+      - name: Send monthly digest
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            [ "${{ inputs.dry_run }}" = "true" ] && ARGS="--dry-run"
+          fi
+          python -m meo.tools.monthly_digest $ARGS

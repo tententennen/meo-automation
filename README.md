@@ -172,6 +172,7 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-discover-locations` | List all GBP accounts and locations — prints ready-to-paste `location_id` values for `config/stores.yaml` (run once after API access is granted) |
 | `meo-stats` | Show aggregate statistics — total posts/replies, activity rates, theme frequency, and star-rating distribution across the full archive |
 | `meo-weekly-digest` | Build and send a 7-day Slack summary of posts and review replies across all stores; `--dry-run` prints to stdout without sending |
+| `meo-monthly-digest` | Build and send a previous-month Slack summary (theme breakdown + full star distribution); fires automatically on the 1st of each month via `monthly_digest.yml`; `--dry-run` prints to stdout without sending |
 | `meo-photo-audit` | Audit Drive photo inventory per store — shows recently-used images (offline, no credentials) or full folder contents with fresh/used breakdown and low-photo warnings (add `--live` for Drive API query) |
 | `meo-review-alert` | Check for reviews held for manual reply and send an urgent Slack alert; exits 0 when none pending, exits 1 when held reviews exist (also runs automatically after each daily CI job) |
 
@@ -191,6 +192,10 @@ meo-stats --store the_body_kyoto        # single store
 # Weekly digest (sent automatically every Monday via weekly_digest.yml)
 meo-weekly-digest --dry-run             # preview without sending to Slack
 meo-weekly-digest                       # send to Slack (SLACK_WEBHOOK_URL required)
+
+# Monthly digest (sent automatically on the 1st of each month via monthly_digest.yml)
+meo-monthly-digest --dry-run            # preview previous month without sending to Slack
+meo-monthly-digest                      # send to Slack (SLACK_WEBHOOK_URL required)
 
 # Photo audit (check Drive photo inventory)
 meo-photo-audit                         # offline: shows recent image IDs from state.json (no credentials)

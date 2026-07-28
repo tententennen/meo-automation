@@ -42,6 +42,7 @@ meo-stats = "meo.tools.stats:main"
 meo-weekly-digest = "meo.tools.weekly_digest:main"
 meo-photo-audit = "meo.tools.photo_audit:main"
 meo-review-alert = "meo.tools.review_alert:main"
+meo-monthly-digest = "meo.tools.monthly_digest:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
