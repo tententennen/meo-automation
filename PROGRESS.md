@@ -1,6 +1,89 @@
 # PROGRESS
 
-## Status: All milestones complete — 695/695 tests green (100% coverage)
+## Status: All milestones complete — 760/760 tests green (100% coverage)
+
+---
+
+## Completed this run (run 62)
+
+### feat(tools): add `meo-trend` — period-over-period comparison of posts, replies, and star ratings
+
+**Gap**: The existing digest tools show activity for a single time window:
+- `meo-weekly-digest` shows "how many posts/replies this week" — no comparison to last week
+- `meo-monthly-digest` shows "how many posts/replies last month" — no comparison to the month before
+- `meo-stats` shows all-time aggregates — no temporal comparison at all
+
+A business owner running three stores wants to know not just "how many", but "is it trending up or down?" — is the AI posting consistently? Are more reviews coming in month over month? Is the star rating improving? None of the existing tools answer this.
+
+**New command**: `meo-trend` (also `python -m meo.tools.trend`)
+
+**Comparison modes:**
+- `--period weekly` (default): current 7-day window (yesterday back 7 days) vs. previous 7-day window
+- `--period monthly`: previous complete calendar month vs. the month before that
+
+**Per-store metrics compared:**
+- 📝 投稿: post count delta with percentage
+- 💬 返信: reply count delta with percentage
+- ⭐ 評価: average star rating delta (numeric)
+
+**Example output (weekly):**
+```
+MEO Automation — トレンドレポート (週次比較)
+
+  当期 (今週): 2026-07-22 〜 2026-07-28
+  前期 (先週): 2026-07-15 〜 2026-07-21
+
+──────────────────────────────────────────────
+THE BODY 大阪 心斎橋店 (the_body_osaka_shinsaibashi)
+  📝 投稿:  当期 7件  前期 5件  →  +2 (+40%)
+  💬 返信:  当期 4件  前期 6件  →  -2 (-33%)
+  ⭐ 評価:  当期 ★4.5  前期 ★3.0  →  +1.5
+──────────────────────────────────────────────
+THE BODY 京都店 (the_body_kyoto)
+  📝 投稿:  当期 7件  前期 7件  →  ±0
+  💬 返信:  当期 3件  前期 3件  →  ±0
+  ⭐ 評価:  当期 ★5.0  前期 ★4.8  →  +0.2
+──────────────────────────────────────────────
+MYBEAR STUDIO 京都店 (mybear_studio_kyoto)
+  📝 投稿:  当期 7件  前期 7件  →  ±0
+  💬 返信:  当期 0件  前期 2件  →  -2
+  ⭐ 評価:  当期 —  前期 ★4.5  →  —
+──────────────────────────────────────────────
+合計: 投稿 当期21件 前期19件 (+2 (+11%)),  返信 当期7件 前期11件 (-4 (-36%))
+```
+
+**Design decisions:**
+- No Slack integration — it's a diagnostic tool (like `meo-stats` and `meo-photo-audit`), not a scheduled notification
+- No Google credentials needed — reads only `logs/state.json`
+- Average star rating: entries with no valid star value (unknown/empty) are excluded from the average; when a period has no replies at all, shows `—` instead of a misleading zero
+- Percentage omitted when prev=0 (avoids division-by-zero and misleading "∞%" output)
+- `±0` for no change; signed `+N` / `-N` for increases / decreases
+- Optional `--store KEY` to focus on a single store
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/trend.py` | New module — 144 statements, 100% covered |
+| `tests/test_trend.py` | 65 new tests (all helpers, run_trend, format, main()) |
+| `pyproject.toml` | `meo-trend` entry point added |
+| `README.md` | `meo-trend` added to CLI tools table and bash examples |
+
+**New tests (+65 tests, 695 → 760):**
+
+- `_weekly_ranges`: 6 tests (cur_end, window sizes, no overlap, boundary)
+- `_monthly_ranges`: 5 tests (basic, Jan wraps, Feb end)
+- `_star_value`: 5 tests (FIVE, ONE, THREE, unknown, empty)
+- `_avg_stars`: 5 tests (empty, all-five, mixed, unknown excluded, no-valid-returns-none)
+- `_format_delta_count`: 5 tests (zero, positive+pct, negative+pct, no-prev-no-pct, both-zero)
+- `_format_delta_stars`: 6 tests (both-none, cur-none, prev-none, positive, negative, zero)
+- `_period_label`: 4 tests (weekly, monthly July, December, January)
+- `_filter_by_date`: 3 tests (boundary included, outside excluded, invalid skipped)
+- `run_trend`: 9 tests (keys, weekly label, monthly label, cur/prev post counts, avg stars, store filter, empty-history)
+- `_format_output`: 13 tests (title, week/month labels, store name/key, period strings, arrow, counts, star delta, totals, 今週/前月)
+- `main()`: 4 tests (default weekly, --period monthly, unknown store exits 1, store filter)
+
+**Coverage change:** 2065 → 2209 statements (144 new), 0 miss, **100% maintained**.
 
 ---
 
