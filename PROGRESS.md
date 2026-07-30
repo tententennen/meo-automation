@@ -1,6 +1,106 @@
 # PROGRESS
 
-## Status: All milestones complete — 760/760 tests green (100% coverage)
+## Status: All milestones complete — 813/813 tests green (100% coverage)
+
+---
+
+## Completed this run (run 63)
+
+### feat(tools): add `meo-config-show` — display effective per-store configuration
+
+**Gap**: The owner has no single-command view of "what settings is this store
+actually running with?"  To understand a store's effective behaviour, they must
+mentally merge two files:
+- `config/stores.yaml` (location_id, drive_folder_id, per-store `overrides`)
+- `config/content.yaml` (global defaults under `defaults:`, industry_tones,
+  llm, banned_words)
+
+There is no existing tool that performs this merge and shows the result.
+`meo-validate` checks for errors; `meo-status` shows env vars and last-run
+timestamps; `meo-health` checks API connectivity — but none of them answer
+"what cadence_days / min_star_autoreply / tone_key is store X running with?"
+This is especially confusing when a store has an `overrides:` block that
+shadows a global default.
+
+**New command**: `meo-config-show` (also `python -m meo.tools.config_show`)
+
+Shows per store:
+- `location_id` and `drive_folder_id` — configured (✓) or TODO placeholder (!)
+- Effective content defaults, one field per line
+- Any per-store override is annotated with `← override (global: N)` so
+  the operator can immediately see what differs from the base config
+- Industry tone profile: tone description and full themes list
+- LLM settings (provider, model_id, temperature, max_tokens, max_retries)
+- Banned words list
+- `call_to_action` if configured (otherwise `[未設定]`)
+
+**Example output (with an override):**
+```
+MEO Automation — 店舗別 有効設定
+
+────────────────────────────────────────────────────────
+MYBEAR STUDIO 京都店  (mybear_studio_kyoto)
+  ✓ location_id: accounts/789/locations/101
+  ✓ drive_folder_id: folder_mybear_xyz
+
+  コンテンツ設定:
+    language                         ja
+    post_cadence_days                2  ← override (global: 1)
+    max_post_chars                   1500
+    ...
+    min_star_autoreply               3  ← override (global: 1)
+    ...
+
+  トーンプロファイル (fitness_studio):
+    tone:   元気で前向き、モチベーション高め、健康志向
+    テーマ: トレーニングのヒント、新メニュー・クラス紹介、...
+
+  LLM:
+    provider:    anthropic
+    model_id:    claude-haiku-4-5-20251001
+    temperature: 0.8
+    max_tokens:  1024
+    max_retries: 3
+
+  禁止ワード: 激安, 最安値, 絶対, 100%保証, ダイエット確実
+  call_to_action: [未設定]
+────────────────────────────────────────────────────────
+合計: 3 店舗
+```
+
+**Design decisions:**
+- No Google credentials needed — reads only config files (same offline pattern
+  as `meo-status`, `meo-stats`, `meo-trend`, etc.)
+- `--store KEY [KEY ...]` to focus on one or more stores
+- Unknown `--store KEY` exits 1 with a clear error message
+- Long ID values (> 50 chars when configured, > 60 chars when TODO) are
+  truncated with `...` to keep lines readable
+- Empty `banned_words` shows `なし` rather than a blank line
+- Empty `call_to_action` shows `[未設定]`; empty `url` in a configured CTA
+  shows `—` rather than a blank
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/config_show.py` | New module — 105 statements, 100% covered |
+| `tests/test_config_show.py` | 53 new tests (run_config_show, format helpers, main()) |
+| `pyproject.toml` | `meo-config-show` entry point added |
+| `README.md` | `meo-config-show` added to CLI tools table and bash examples |
+
+**New tests (+53 tests, 760 → 813):**
+
+- `run_config_show`: 17 tests (all stores returned, store filter, unknown key, configured/TODO IDs, overrides detected, effective defaults, tone profiles, llm/banned_words)
+- `_format_id_line`: 4 tests (configured ✓, TODO !, long truncated, short kept)
+- `_format_defaults_section`: 5 tests (all fields present, override annotation, no annotation without override, value shown, multiple overrides)
+- `_format_tone_section`: 4 tests (industry name, tone description, themes, unknown industry warning)
+- `_format_llm_section`: 4 tests (provider/model, temperature/tokens, empty dict, missing key dash)
+- `_format_cta_section`: 3 tests (None → 未設定, action_type + url, empty url → dash)
+- `_format_banned_words`: 3 tests (empty → なし, single, multiple joined)
+- `_format_output`: 8 tests (empty → no stores, store name/key, total line, divider, multiple stores, override annotation, TODO 未設定)
+- `main()`: 5 tests (exit 0, all stores in output, store filter, unknown key exits 1, error message)
+
+**Coverage change:** 2209 → 2314 statements (105 new), 0 miss, **100% maintained**.
 
 ---
 

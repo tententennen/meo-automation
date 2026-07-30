@@ -44,6 +44,7 @@ meo-photo-audit = "meo.tools.photo_audit:main"
 meo-review-alert = "meo.tools.review_alert:main"
 meo-monthly-digest = "meo.tools.monthly_digest:main"
 meo-trend = "meo.tools.trend:main"
+meo-config-show = "meo.tools.config_show:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
