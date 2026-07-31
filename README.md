@@ -177,6 +177,7 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-review-alert` | Check for reviews held for manual reply and send an urgent Slack alert; exits 0 when none pending, exits 1 when held reviews exist (also runs automatically after each daily CI job) |
 | `meo-trend` | Show period-over-period deltas (post count, reply count, average star rating) comparing this week vs last week or this month vs last month; reads state.json only — no Google credentials required |
 | `meo-config-show` | Display the effective (merged) configuration for each store — combines global content.yaml defaults with per-store overrides, annotating overridden fields; no Google credentials required |
+| `meo-held-reply-draft` | Generate AI reply drafts for currently held (low-star) reviews so the owner can copy-paste them into GBP; requires LLM API key but no Google credentials; exits 1 if any LLM error occurs |
 
 ```bash
 # Discover location IDs (run once after GBP API access is approved)
@@ -217,6 +218,11 @@ meo-trend --store the_body_kyoto        # single store
 # Config show (effective merged settings per store, no credentials needed)
 meo-config-show                         # all stores
 meo-config-show --store the_body_kyoto  # single store (shows overrides annotated)
+
+# Held reply draft (generate AI drafts for low-star held reviews, no Google credentials needed)
+meo-held-reply-draft                    # all stores with held reviews
+meo-held-reply-draft --store the_body_kyoto              # single store
+meo-held-reply-draft --output logs/held_drafts.txt       # also save to file
 
 # Reset examples (use when re-testing or after manual interventions)
 meo-reset post-guard --store the_body_kyoto  # allow a new post today for one store

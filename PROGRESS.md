@@ -1,6 +1,99 @@
 # PROGRESS
 
-## Status: All milestones complete — 813/813 tests green (100% coverage)
+## Status: All milestones complete — 861/861 tests green (100% coverage)
+
+---
+
+## Completed this run (run 64)
+
+### feat(tools): add `meo-held-reply-draft` — AI reply drafts for held low-star reviews
+
+**Gap**: When a review's star rating is below `min_star_autoreply`, the daily runner
+holds it for manual reply rather than auto-posting a response.  The owner's current
+workflow is:
+1. Receive a Slack alert from `meo-review-alert` ("2 reviews awaiting manual reply")
+2. Open Google Business Profile on their phone
+3. Find the held review
+4. Write a reply from scratch in Japanese
+
+Step 4 is the friction point — the owner must compose a polished Japanese reply
+without any AI assistance, for the most delicate situation (a dissatisfied customer).
+
+**Fix**: New command `meo-held-reply-draft` reads the held-review snapshot from
+`state.json` and calls `generate_reply()` for each held review, producing AI-drafted
+replies the owner can copy-paste into GBP.
+
+**Key design decisions:**
+
+- **No Google credentials needed** — reads only `state.json` (same offline pattern as
+  `meo-stats`, `meo-weekly-digest`, `meo-review-alert`, etc.)
+- **Requires LLM API key** — calls `generate_reply()` with the actual held review data
+  (unlike `meo-preview`, which uses synthetic sample reviews)
+- **Held-review format → GBP resource conversion** — `_held_to_review_resource()` maps
+  `state.json` keys (`reviewer` string, `stars` string, `review_id`) to the dict shape
+  `generate_reply()` expects (`reviewer.displayName`, `starRating`, `reviewId`)
+- **Per-entry error isolation** — if the LLM call fails for one review, the error is
+  captured and the tool continues with the remaining reviews (same pattern as `run_preview`)
+- **Exit codes**:
+  - `0` — all drafts generated successfully (or no held reviews)
+  - `1` — one or more LLM errors occurred
+- **`--store KEY`** filter, **`--output FILE`** to save to a text file
+
+**Example output:**
+```
+MEO Automation — 保留中レビューへの返信ドラフト
+Generated: 2026-07-31 09:00 JST
+
+────────────────────────────────────────────────────────
+THE BODY 大阪 心斎橋店  (the_body_osaka_shinsaibashi) — 2件
+
+[1/2]
+  ★☆☆☆☆  田中様  2026-07-25
+  レビュー: 「期待していたほどではありませんでした。スタッフの対応に改善が必要だと感じます。」
+
+  ▶ 返信ドラフト:
+  田中様、この度はご来店いただきありがとうございます。ご期待に沿えなかった点につきまして、深くお
+  詫び申し上げます。...
+
+[2/2]
+  ★★☆☆☆  佐藤様  2026-07-26
+  レビュー: 「少し待ち時間が長かったです。」
+
+  ▶ 返信ドラフト:
+  佐藤様、ご来店いただきありがとうございます。待ち時間が長くなってしまい...
+
+────────────────────────────────────────────────────────
+合計: 2件のドラフトを生成しました
+GBP で各レビューを開き、上記のドラフトをコピーして返信してください。
+```
+
+**Relation to existing tools:**
+
+| Tool | What it uses | Purpose |
+|---|---|---|
+| `meo-preview` | Synthetic sample reviews (1★/3★/5★) | Verify tone before first live run |
+| `meo-held-reply-draft` | **Actual held reviews from state.json** | Assist manual reply to real held reviews |
+| `meo-review-alert` | state.json, Slack webhook | Alert that held reviews exist |
+| `meo-export held-reviews` | state.json | Export CSV of held reviews |
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/held_reply_draft.py` | New module — 93 statements, 100% covered |
+| `tests/test_held_reply_draft.py` | 48 new tests (see below) |
+| `pyproject.toml` | `meo-held-reply-draft` entry point added |
+| `README.md` | `meo-held-reply-draft` added to CLI tools table and bash examples |
+
+**New tests (+48 tests, 813 → 861):**
+
+- `_star_symbol`: 6 tests (FIVE, ONE, THREE, unknown, empty, case-insensitive)
+- `_held_to_review_resource`: 6 tests (reviewer→displayName, stars→starRating, comment, review_id, missing reviewer, empty reviewer)
+- `run_held_reply_draft`: 10 tests (no held, one store, draft count, draft text, LLM error, store omitted when no held, multiple stores, held entry preserved, store name, errors don't stop other entries)
+- `_format_output`: 18 tests (empty, header, timestamp, store name/key, reviewer, star symbol, review date, comment, draft text, error shown, total count, no-comment placeholder, date field fallback, anonymous, index counter, arrow marker, count in store header, multiline draft)
+- `main()`: 8 tests (no held exits 0, with held exits 0, output to stdout, LLM error exits 1, unknown store exits 1, store filter, output file saved)
+
+**Coverage change:** 2314 → 2407 statements (93 new), 0 miss, **100% maintained**.
 
 ---
 
