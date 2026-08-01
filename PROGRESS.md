@@ -1,6 +1,91 @@
 # PROGRESS
 
-## Status: All milestones complete — 861/861 tests green (100% coverage)
+## Status: All milestones complete — 913/913 tests green (100% coverage)
+
+---
+
+## Completed this run (run 65)
+
+### feat(tools): add `meo-calendar` — day-by-day posting calendar per store
+
+**Gap**: The existing diagnostic tools describe activity in aggregate or as deltas, but
+none show a concrete day-by-day view:
+- `meo-stats` shows total-post count and rate across the full archive — no daily view.
+- `meo-trend` shows this-week vs last-week or this-month vs last-month count deltas — no
+  visibility into which specific days had a post vs. which were missed.
+- `meo-report` lists recent posts chronologically, but doesn't show gaps visually.
+
+A business owner who suspects the automation skipped a day (e.g., after a GitHub Actions
+failure) has no quick way to see the calendar view of actual posts vs. missed days for
+each store.
+
+**New command**: `meo-calendar` (also `python -m meo.tools.calendar`)
+
+Shows, for each store, a row of daily post symbols grouped in 7-day chunks, plus a
+posting rate and an explicit list of any missed days.
+
+**Example output (7 days, all stores):**
+
+```
+MEO Automation — 投稿カレンダー
+2026-07-25 〜 2026-07-31 (直近7日)
+
+                        7/25
+THE BODY 大阪 心斎橋店  ●●●○●●●  6/7 ( 86%)
+THE BODY 京都店         ●●●●●●●  7/7 (100%)
+MYBEAR STUDIO 京都店    ●●●●●●●  7/7 (100%)
+
+全店舗合計: 20/21 (95%)
+
+投稿なしの日:
+  2026-07-28 (the_body_osaka_shinsaibashi)
+
+凡例: ● = 投稿あり  ○ = 投稿なし  (スペース = 7日ごとの区切り)
+```
+
+**Key design decisions:**
+
+- **No Google credentials needed** — reads only `state.json` (same offline pattern as
+  `meo-stats`, `meo-trend`, `meo-weekly-digest`, etc.)
+- **Weekly chunks with a space separator** — groups of 7 days separated by a single space
+  make it easy to count weeks at a glance without adding a complex alignment header
+- **Date ruler above symbols** — a lightweight header shows the first date of each 7-day
+  chunk, aligned over the symbol columns, so the owner can orient to specific weeks
+  without counting from the start date
+- **Gap list at the bottom** — any missed day is listed explicitly by date and store key,
+  so the owner doesn't have to count symbols to find which date a `○` falls on
+- **Per-store rate and overall total** — `count/total (pct%)` per store, plus a summary
+  total across all stores
+- **`--days N`** — 1–30 (default 30); max matches `_POST_HISTORY_SIZE` so history always
+  covers the window
+- **`--store KEY [KEY …]`** — show only specified stores; unknown key exits 1
+- **`--output FILE`** — save to file in addition to printing to stdout; file write errors
+  are non-fatal (warning only, exits 0)
+- **Defensive `if not chunk: continue` guard** in `_week_header` — covered by a dedicated
+  test that exercises the branch directly
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/calendar.py` | New module — 125 statements, 100% covered |
+| `tests/test_calendar.py` | 52 new tests (see below) |
+| `pyproject.toml` | `meo-calendar` entry point added |
+| `README.md` | `meo-calendar` added to CLI tools table and bash examples |
+
+**New tests (+52 tests, 861 → 913):**
+
+- `_date_range`: 4 tests (end=yesterday, 30-day window, 7-day start, 1-day)
+- `_posted_dates`: 5 tests (in-range, excludes out-of-range, skips invalid date, empty history, duplicates deduplicated)
+- `_week_chunks`: 4 tests (exactly 7, 14→two chunks, 8→partial last, empty)
+- `_symbols_row`: 4 tests (all posted, none posted, mixed, multiple chunks separated by space)
+- `_week_header`: 5 tests (single chunk, two chunks, padding width, partial last chunk, empty-chunk guard)
+- `_gap_lines`: 4 tests (no gaps, one gap, multiple stores same day, chronological order)
+- `run_calendar`: 6 tests (all stores, store filter, unknown key raises ValueError, count correct, empty history, date bounds)
+- `_format_output`: 13 tests (title, date range, store names, posted/not-posted symbols, rate, total line, no-gap section when full, gap section when gaps exist, legend, week header, 100% rate, 0% rate)
+- `main()`: 7 tests (prints output, unknown store exits 1, store filter, days flag, invalid days exits 1, output file written, write error non-fatal)
+
+**Coverage change:** 2407 → 2532 statements (125 new), 0 miss, **100% maintained**.
 
 ---
 

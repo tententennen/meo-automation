@@ -46,6 +46,7 @@ meo-monthly-digest = "meo.tools.monthly_digest:main"
 meo-trend = "meo.tools.trend:main"
 meo-config-show = "meo.tools.config_show:main"
 meo-held-reply-draft = "meo.tools.held_reply_draft:main"
+meo-calendar = "meo.tools.calendar:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
