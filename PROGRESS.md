@@ -1,8 +1,121 @@
 # PROGRESS
 
-## Status: All milestones complete — 913/913 tests green (100% coverage)
+## Status: All milestones complete — 998/998 tests green (100% coverage)
 
 ---
+
+## Completed this run (run 66)
+
+### feat(tools): add `meo-score` — per-store health scorecard
+
+**Gap**: The operator has a growing suite of diagnostic tools that each answer one
+specific question, but no single command that answers "how is the automation doing,
+overall, right now?" To get a full picture they must run several commands and mentally
+synthesize the results:
+
+- `meo-calendar` → posting cadence
+- `meo-review-alert` → held reviews
+- `meo-stats` → aggregate star-rating distribution
+- `meo-photo-audit` → Drive configuration
+- `meo-trend` → period-over-period change
+
+A new operator or a business owner returning from a week away would not know which
+commands to run first, or how to interpret the combination.
+
+**New command**: `meo-score` (also `python -m meo.tools.score`)
+
+Synthesises four signals into a single per-store grade (S/A/B/C/D) and a
+prioritised action-item list — the "first thing to check" command.
+
+**Grade scale:**
+- **S** — Superb (target fully met)
+- **A** — Good (minor shortfall, no urgent action)
+- **B** — Acceptable (threshold for "healthy" — exit code 0)
+- **C** — Needs attention (exit code 1)
+- **D** — Critical (immediate action required)
+
+**Four graded dimensions:**
+
+| Dimension | S | A | B | C | D |
+|---|---|---|---|---|---|
+| Posting rate (7-day) | 7/7 | 6/7 | 5/7 | 3-4/7 | <3/7 |
+| Held reviews | 0 | 1 | 2 | 3-4 | ≥5 |
+| Star rating (30-day avg) | ≥4.8 | ≥4.5 | ≥4.0 | ≥3.5 | <3.5 or no data |
+| Drive configured | yes | — | — | — | TODO placeholder |
+
+**Overall grade** = worst-dimension grade (dragged down by the weakest signal).
+
+**Exit codes:**
+- `0` — all stores at grade B or better (healthy)
+- `1` — one or more stores below grade B, or unknown `--store` key given
+
+**Example output:**
+```
+MEO Automation — 店舗別ヘルススコア
+生成日時: 2026-08-02 (JST)
+
+────────────────────────────────────────────────────
+THE BODY 大阪 心斎橋店  (the_body_osaka_shinsaibashi)
+  総合: B  〜
+
+  📝 投稿頻度 (7日):  S  ✨  (7/7 日)
+  💬 保留レビュー:    S  ✨  (0件)
+  ⭐ 平均評価 (30日): A  ✓   (★4.7)
+  📁 Drive設定:       D  ✗
+
+  ▶ アクション:
+    • Drive フォルダ未設定 — config/stores.yaml の drive_folder_id を入力してください
+
+────────────────────────────────────────────────────
+⚠️  要対応: THE BODY 大阪 心斎橋店
+```
+
+**Key design decisions:**
+- **No Google credentials needed** — reads only `state.json` and config files
+  (same offline pattern as `meo-stats`, `meo-trend`, `meo-calendar`, etc.)
+- **Overall = worst dimension** — a single failing dimension drags the whole score
+  down, making it impossible to overlook a critical signal
+- **Action items ordered by urgency** — held reviews → Drive setup → post rate →
+  star rating; the first item on the list is always the most critical
+- **Separate "healthy A" held-review action** — when held count is 1–2 (grade A/B,
+  "healthy") a softer reminder is still emitted so the owner doesn't forget, without
+  triggering the "manual reply" alarm language used for grade C/D
+- **Star grade "D" with no data** — when there are no reply entries in the last 30
+  days, grade D is assigned and the action item explains "返信評価データなし" rather
+  than "低め" — distinct message for missing-data vs low-star cases
+- **`--store KEY [KEY …]`** — filter to one or more stores; unknown key exits 1
+- **Exit code contract** — exit 1 when any store is below B means CI can run
+  `meo-score || true` for a non-fatal health check that still surfaces in Slack
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/score.py` | New module — 179 statements, 100% covered |
+| `tests/test_score.py` | 85 new tests (see below) |
+| `pyproject.toml` | `meo-score` entry point added |
+| `README.md` | `meo-score` added to CLI tools table and bash examples |
+
+**New tests (+85 tests, 913 → 998):**
+
+- `_grade_rank`: 3 tests (known grade, D rank, unknown → 4)
+- `_worst_grade`: 5 tests (empty → D, single, mixed, all-B, D-dominates)
+- `_is_healthy`: 5 tests (S/A/B → True; C/D → False)
+- `_posting_rate_grade`: 8 tests (7+→S, 6→A, 5→B, 4/3→C, 2/0→D)
+- `_held_grade`: 7 tests (0→S, 1→A, 2→B, 3/4→C, 5/10→D)
+- `_star_grade`: 9 tests (None→D, 5.0/4.8→S, 4.7/4.5→A, 4.0→B, 3.5→C, 3.4/1.0→D)
+- `_drive_grade`: 3 tests (empty→D, TODO→D, configured→S)
+- `_posts_last_7_days`: 4 tests (within window, excludes today, before window, invalid date)
+- `_avg_stars_30_days`: 6 tests (averaged, outside excluded, invalid date, unknown star, no valid → None, empty → None)
+- `_action_items`: 8 tests (all healthy → [], unhealthy held, healthy-held mild, zero-held, Drive D, post C, star C with avg, star D no data)
+- `run_score`: 8 tests (all stores, store filter, expected keys, worst-dimension overall, healthy=True, healthy=False for TODO drive, avg=None when no history, today=None uses JST)
+- `_format_output`: 13 tests (title, date, store name/key, overall grade, posts/7d, held count, avg stars, データなし, actions listed, no results placeholder, all-healthy ✅, some-unhealthy ⚠️, no actions = no section)
+- `main()`: 5 tests (exits 0 when all healthy, exits 1 when unhealthy, unknown store exits 1, store filter limits output, scorecard printed)
+
+**Coverage change:** 2532 → 2711 statements (179 new), 0 miss, **100% maintained**.
+
+---
+
 
 ## Completed this run (run 65)
 
