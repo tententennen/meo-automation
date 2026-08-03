@@ -179,7 +179,7 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-config-show` | Display the effective (merged) configuration for each store — combines global content.yaml defaults with per-store overrides, annotating overridden fields; no Google credentials required |
 | `meo-held-reply-draft` | Generate AI reply drafts for currently held (low-star) reviews so the owner can copy-paste them into GBP; requires LLM API key but no Google credentials; exits 1 if any LLM error occurs |
 | `meo-calendar` | Show a day-by-day posting calendar for all stores over the last N days (default 30), grouped in weekly chunks with posting-rate percentage and an explicit list of any missed days; reads state.json only — no Google credentials required |
-| `meo-score` | Per-store health scorecard — grades each store S/A/B/C/D across posting rate (7-day), held-review count, average star rating (30-day), and Drive configuration; emits a prioritised action-item list; exits 0 when all stores are grade B or better, exits 1 otherwise; reads state.json and config only — no Google credentials required |
+| `meo-score` | Per-store health scorecard — grades each store S/A/B/C/D across posting rate (7-day), held-review count, average star rating (30-day), and Drive configuration; emits a prioritised action-item list; exits 0 when all stores are grade B or better, exits 1 otherwise; reads state.json and config only — no Google credentials required; `--slack` posts the scorecard to SLACK_WEBHOOK_URL (also added as a step in `daily_run.yml`) |
 
 ```bash
 # Discover location IDs (run once after GBP API access is approved)
@@ -234,6 +234,7 @@ meo-calendar --output logs/calendar.txt # also save to file
 
 meo-score                               # all stores (exit 0 = healthy, exit 1 = action needed)
 meo-score --store the_body_kyoto        # single store
+meo-score --slack                       # also post scorecard to Slack (SLACK_WEBHOOK_URL)
 
 # Reset examples (use when re-testing or after manual interventions)
 meo-reset post-guard --store the_body_kyoto  # allow a new post today for one store

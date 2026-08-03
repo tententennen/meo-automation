@@ -119,6 +119,19 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m meo.tools.review_alert || true
 
+      # Post the per-store health scorecard to Slack after the main run and
+      # review alert have updated state.json.  The score reads only state.json
+      # and config, so no Google credentials are needed.
+      # Exits 1 when any store is below grade B (desired exit so operators know
+      # action is needed), but continue-on-error keeps this step non-fatal so
+      # the state-save and log-upload steps always run.
+      - name: Post health score to Slack
+        if: always()
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m meo.tools.score --slack
+
       # Save state after the run so the next run's duplicate guard has context.
       # continue-on-error: true guards against the first-ever run where state.json
       # may not exist (e.g., dry-run with no stores configured).

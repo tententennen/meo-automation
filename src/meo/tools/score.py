@@ -20,16 +20,21 @@ Exit code:
 Usage:
     meo-score                              # all stores
     meo-score --store the_body_kyoto       # single store
+    meo-score --slack                      # also post scorecard to Slack
     python -m meo.tools.score
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
+import os
 import sys
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
+
+import requests
 
 try:
     from dotenv import load_dotenv
@@ -39,6 +44,8 @@ except ImportError:  # pragma: no cover
 
 from .. import config as cfg
 from ..state import get_held_reviews, get_post_history, get_reply_history
+
+logger = logging.getLogger(__name__)
 
 _JST = ZoneInfo("Asia/Tokyo")
 _DIVIDER = "─" * 52
@@ -357,6 +364,32 @@ def _format_output(results: list[dict[str, Any]], today: date) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Slack delivery
+# ---------------------------------------------------------------------------
+
+def _send_score_to_slack(text: str) -> bool:
+    """Post the health scorecard to the Slack webhook.
+
+    Returns True on success, False when the URL is missing or the call fails.
+    Failures are logged as warnings and never propagate — callers are
+    responsible for deciding whether to exit non-zero based on store health,
+    not on notification delivery.
+    """
+    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    if not webhook_url:
+        logger.debug("SLACK_WEBHOOK_URL not set; skipping Slack notification.")
+        return False
+    try:
+        resp = requests.post(webhook_url, json={"text": text}, timeout=10)
+        resp.raise_for_status()
+        logger.debug("Health scorecard sent to Slack.")
+        return True
+    except Exception as exc:
+        logger.warning("Score Slack send failed (non-fatal): %s", exc)
+        return False
+
+
+# ---------------------------------------------------------------------------
 # CLI entrypoint
 # ---------------------------------------------------------------------------
 
@@ -378,6 +411,14 @@ def main() -> None:
             "Keys: the_body_osaka_shinsaibashi, the_body_kyoto, mybear_studio_kyoto"
         ),
     )
+    parser.add_argument(
+        "--slack",
+        action="store_true",
+        help=(
+            "Also send the scorecard to SLACK_WEBHOOK_URL. "
+            "No-op when the env var is not set."
+        ),
+    )
     args = parser.parse_args()
 
     stores = cfg.store_list()
@@ -393,7 +434,11 @@ def main() -> None:
 
     today = datetime.now(tz=_JST).date()
     results = run_score(store_filter=args.store, today=today)
-    print(_format_output(results, today))
+    output = _format_output(results, today)
+    print(output)
+
+    if args.slack:
+        _send_score_to_slack(output)
 
     if not all(r["healthy"] for r in results):
         sys.exit(1)

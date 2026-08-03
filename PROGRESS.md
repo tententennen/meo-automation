@@ -1,6 +1,73 @@
 # PROGRESS
 
-## Status: All milestones complete — 998/998 tests green (100% coverage)
+## Status: All milestones complete — 1005/1005 tests green (100% coverage)
+
+---
+
+## Completed this run (run 67)
+
+### feat(tools): add `--slack` to `meo-score` + daily health-score step in CI
+
+**Gap**: `meo-score` produced its per-store health scorecard only on stdout — the
+owner had to run it manually to see health grades. There was no automated way for
+the owner to receive a Slack health summary after each daily run.
+
+The daily workflow already delivered three types of notifications via Slack:
+- **Run summary** (`notify.py` via `main.py`) — per-store post/reply status
+- **Held-review alert** (`meo-review-alert`) — urgent ping when low-star reviews need attention
+- **Weekly digest** (`meo-weekly-digest`) — Monday morning 7-day summary
+
+But the composite health score (posting rate, held reviews, star rating, Drive config)
+was only visible via `meo-score` when run manually. The owner returning from a trip
+had no way to get a health summary in their Slack channel without logging in.
+
+**Fix**: Added `--slack` flag to `meo-score` and a new step in `daily_run.yml`.
+
+**`meo-score --slack`:**
+- Builds the formatted scorecard (same output as before)
+- Prints it to stdout (unchanged)
+- Also posts it to `SLACK_WEBHOOK_URL` when set (no-op otherwise)
+- `_send_score_to_slack()` follows the same pattern as all other Slack senders in
+  the codebase: logs debug on missing URL, logs warning on failure, never raises
+- Returns `True` on successful send, `False` otherwise (useful for testing)
+- Exit-code contract unchanged: 0 = all healthy (B+), 1 = action needed
+
+**`daily_run.yml` new step:**
+```yaml
+- name: Post health score to Slack
+  if: always()
+  continue-on-error: true
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  run: python -m meo.tools.score --slack
+```
+- Runs after `Alert on held reviews` (both state.json mutations are complete)
+- `if: always()` — fires even when the main run fails (health score is still informative)
+- `continue-on-error: true` — never blocks state-save or log-upload
+- No credentials needed beyond `SLACK_WEBHOOK_URL` (already in secrets)
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/score.py` | `import logging, os, requests` added; `logger` module-level; `_send_score_to_slack()` new function; `--slack` flag in `main()`; `output` variable; `_send_score_to_slack(output)` call |
+| `tests/test_score.py` | `_send_score_to_slack` added to imports; `MagicMock, patch, requests` imports; 7 new tests (see below) |
+| `.github/workflows/daily_run.yml` | `Post health score to Slack` step added |
+| `README.md` | `meo-score` description updated; `--slack` example added to bash block |
+
+**New tests (+7 tests, 998 → 1005):**
+
+| Test | What it covers |
+|---|---|
+| `test_send_score_to_slack_no_webhook_url_returns_false` | No `SLACK_WEBHOOK_URL` → returns False; no network call |
+| `test_send_score_to_slack_success_returns_true` | Successful POST → returns True |
+| `test_send_score_to_slack_http_error_returns_false` | `raise_for_status()` raises `HTTPError` → returns False |
+| `test_send_score_to_slack_network_error_returns_false` | `requests.post` raises → returns False |
+| `test_main_slack_flag_calls_send_score` | `--slack` → `_send_score_to_slack` called once |
+| `test_main_no_slack_flag_does_not_call_send_score` | No `--slack` → `_send_score_to_slack` never called |
+| `test_main_slack_passes_formatted_scorecard` | Argument passed to `_send_score_to_slack` contains `ヘルススコア` |
+
+**Coverage change:** 2711 → 2732 statements (21 new), 0 miss, **100% maintained**.
 
 ---
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import sys
 from datetime import date
+from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from meo.tools.score import (
     _action_items,
@@ -17,6 +19,7 @@ from meo.tools.score import (
     _is_healthy,
     _posts_last_7_days,
     _posting_rate_grade,
+    _send_score_to_slack,
     _star_grade,
     _worst_grade,
     main,
@@ -689,3 +692,66 @@ def test_main_prints_scorecard(_no_state, capsys):
         main()
     out = capsys.readouterr().out
     assert "ヘルススコア" in out
+
+
+# ---------------------------------------------------------------------------
+# _send_score_to_slack
+# ---------------------------------------------------------------------------
+
+def test_send_score_to_slack_no_webhook_url_returns_false(monkeypatch):
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    assert _send_score_to_slack("scorecard text") is False
+
+
+def test_send_score_to_slack_success_returns_true(monkeypatch):
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status.return_value = None
+    with patch("requests.post", return_value=mock_resp):
+        result = _send_score_to_slack("scorecard text")
+    assert result is True
+
+
+def test_send_score_to_slack_http_error_returns_false(monkeypatch):
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status.side_effect = requests.HTTPError("500")
+    with patch("requests.post", return_value=mock_resp):
+        result = _send_score_to_slack("scorecard text")
+    assert result is False
+
+
+def test_send_score_to_slack_network_error_returns_false(monkeypatch):
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
+    with patch("requests.post", side_effect=Exception("connection timeout")):
+        result = _send_score_to_slack("scorecard text")
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# main() — --slack flag
+# ---------------------------------------------------------------------------
+
+def test_main_slack_flag_calls_send_score(_no_state):
+    sys.argv = ["meo-score", "--slack"]
+    with patch("meo.tools.score._send_score_to_slack") as mock_send:
+        with pytest.raises(SystemExit):
+            main()
+    mock_send.assert_called_once()
+
+
+def test_main_no_slack_flag_does_not_call_send_score(_no_state):
+    sys.argv = ["meo-score"]
+    with patch("meo.tools.score._send_score_to_slack") as mock_send:
+        with pytest.raises(SystemExit):
+            main()
+    mock_send.assert_not_called()
+
+
+def test_main_slack_passes_formatted_scorecard(_no_state):
+    sys.argv = ["meo-score", "--slack"]
+    with patch("meo.tools.score._send_score_to_slack") as mock_send:
+        with pytest.raises(SystemExit):
+            main()
+    sent_text = mock_send.call_args[0][0]
+    assert "ヘルススコア" in sent_text
