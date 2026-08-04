@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 import requests
@@ -65,10 +66,11 @@ def _patch_stores(monkeypatch):
 
 @pytest.fixture()
 def _no_state(monkeypatch):
-    """Stub out all state accessors to return empty data."""
+    """Stub out all state accessors to return empty data and suppress writes."""
     monkeypatch.setattr("meo.tools.score.get_post_history", lambda key: [])
     monkeypatch.setattr("meo.tools.score.get_reply_history", lambda key: [])
     monkeypatch.setattr("meo.tools.score.get_held_reviews", lambda key: [])
+    monkeypatch.setattr("meo.tools.score.record_score_snapshot", lambda *a, **kw: None)
 
 
 # ---------------------------------------------------------------------------
@@ -652,10 +654,16 @@ def test_main_exits_0_when_all_healthy(_no_state, monkeypatch, capsys):
         for s in _STORES
     ]
     monkeypatch.setattr("meo.tools.score.cfg.store_list", lambda: configured_stores)
-    history_7 = [{"date": f"2026-07-{d:02d}", "text": "p"} for d in range(26, 33)]
-    reply_hist = [{"date": "2026-07-31", "stars": "FIVE"}]
+    # Build history relative to today so dates always fall within the 7-day window.
+    _jst_today = datetime.now(tz=ZoneInfo("Asia/Tokyo")).date()
+    history_7 = [
+        {"date": (_jst_today - timedelta(days=i + 1)).isoformat(), "text": "p"}
+        for i in range(7)
+    ]
+    reply_hist = [{"date": (_jst_today - timedelta(days=1)).isoformat(), "stars": "FIVE"}]
     monkeypatch.setattr("meo.tools.score.get_post_history", lambda key: history_7)
     monkeypatch.setattr("meo.tools.score.get_reply_history", lambda key: reply_hist)
+    monkeypatch.setattr("meo.tools.score.get_held_reviews", lambda key: [])
     sys.argv = ["meo-score"]
     main()  # should not raise
     out = capsys.readouterr().out
@@ -755,3 +763,34 @@ def test_main_slack_passes_formatted_scorecard(_no_state):
             main()
     sent_text = mock_send.call_args[0][0]
     assert "ヘルススコア" in sent_text
+
+
+# ---------------------------------------------------------------------------
+# main() — score snapshot persistence
+# ---------------------------------------------------------------------------
+
+def test_main_saves_snapshot_when_no_store_filter(_no_state):
+    sys.argv = ["meo-score"]
+    with patch("meo.tools.score.record_score_snapshot") as mock_snap:
+        with pytest.raises(SystemExit):
+            main()
+    mock_snap.assert_called_once()
+
+
+def test_main_snapshot_includes_all_store_keys(_no_state):
+    sys.argv = ["meo-score"]
+    with patch("meo.tools.score.record_score_snapshot") as mock_snap:
+        with pytest.raises(SystemExit):
+            main()
+    _, grades = mock_snap.call_args[0]
+    assert "the_body_osaka_shinsaibashi" in grades
+    assert "the_body_kyoto" in grades
+    assert "mybear_studio_kyoto" in grades
+
+
+def test_main_does_not_save_snapshot_when_store_filter_given(_no_state):
+    sys.argv = ["meo-score", "--store", "the_body_kyoto"]
+    with patch("meo.tools.score.record_score_snapshot") as mock_snap:
+        with pytest.raises(SystemExit):
+            main()
+    mock_snap.assert_not_called()

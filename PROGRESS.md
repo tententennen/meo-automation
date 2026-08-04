@@ -1,6 +1,100 @@
 # PROGRESS
 
-## Status: All milestones complete — 1005/1005 tests green (100% coverage)
+## Status: All milestones complete — 1063/1063 tests green (100% coverage)
+
+---
+
+## Completed this run (run 68)
+
+### feat(tools): add `meo-score-history` — daily health-grade trend table
+
+**Gap**: `meo-score` computes the current health grade and posts it to Slack,
+but every run produces an independent snapshot with no historical context. After
+a week of daily runs the owner has no quick way to answer "has the automation
+been consistently healthy, or are stores bouncing between B and D?"  The only
+way to see past scores was to scroll through GitHub Actions Slack notifications
+or dig into archived job logs.
+
+**Fix**: Two changes:
+
+1. **Score snapshot persistence in `state.json`**: Each time `meo-score` runs
+   without a `--store` filter (i.e., the full daily CI run), it now calls
+   `record_score_snapshot()` which appends `{"date": "2026-08-04", "grades":
+   {"the_body_osaka_shinsaibashi": "B", ...}}` to a `score_history` list in
+   `state.json`. If called more than once on the same date the earlier entry is
+   replaced (deduplication by date). Keeps the last 60 entries (~2 months).
+   Running `meo-score --store KEY` (a filtered/diagnostic run) does NOT save a
+   snapshot — only full unfiltered runs contribute to the history, preventing
+   partial snapshots from polluting the trend data.
+
+2. **`meo-score-history`** — new CLI tool that reads the accumulated snapshots
+   and renders a compact grade table (one row per day, one column per store):
+
+```
+MEO Automation — ヘルススコア履歴
+直近 14 日 (2026-07-21 〜 2026-08-03)
+
+日付          THE BODY 大阪   THE BODY 京   MYBEAR STUDI
+──────────────────────────────────────────────────────────────────
+2026-08-03  B             S             D
+2026-08-02  B             S             D
+2026-08-01  B             A             D
+2026-07-31  C             S             D
+...
+2026-07-22  B             S             D
+──────────────────────────────────────────────────────────────────
+（スナップショット: 12/14 日分）
+
+凡例: S=完璧  A=良好  B=普通  C=要注意  D=要対応  —=データなし
+```
+
+**Key design decisions:**
+
+- **No Google credentials needed** — reads only `state.json` (same offline
+  pattern as `meo-stats`, `meo-calendar`, etc.)
+- **Snapshot deduplication by date** — multiple manual `meo-score` calls on the
+  same day don't inflate the history; the last full call wins
+- **`--store` filter does not save** — a partial run (e.g. `meo-score --store
+  the_body_kyoto`) cannot produce a snapshot missing the other stores, keeping
+  the trend data consistent
+- **60-entry cap** (~2 months of daily data, negligible state.json size)
+- **`--days N`** (1–60, default 14) — how far back to display
+- **`--store KEY [KEY …]`** — narrow the visible columns; unknown key exits 1
+- **`--output FILE`** — also write to a file (non-fatal on write error)
+- **Date exclusion**: today is always excluded so all displayed rows represent
+  complete days (same convention as `meo-calendar`, `meo-trend`, etc.)
+- **Pre-existing test bug fixed**: `test_main_exits_0_when_all_healthy` in
+  `test_score.py` used hardcoded 2026-07-26–31 history dates that had drifted
+  outside the current 7-day scoring window (today=2026-08-04). Fixed to
+  generate history dates relative to the actual current JST date so the test
+  passes regardless of when it runs.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | `_SCORE_HISTORY_SIZE = 60`; `record_score_snapshot()` new function; `get_score_snapshots()` new function |
+| `src/meo/tools/score.py` | `record_score_snapshot` added to import; `main()` calls `record_score_snapshot(today.isoformat(), snapshot_grades)` when no `--store` filter |
+| `src/meo/tools/score_history.py` | New module — 119 statements, 100% covered |
+| `tests/test_state.py` | +6 tests for `record_score_snapshot` / `get_score_snapshots` |
+| `tests/test_score.py` | `_no_state` fixture stubs `record_score_snapshot`; `test_main_exits_0_when_all_healthy` fixed to use relative dates; `datetime`/`timedelta`/`ZoneInfo` imports added; +3 new tests for snapshot behavior in `main()` |
+| `tests/test_score_history.py` | New test file — 49 tests (see below) |
+| `pyproject.toml` | `meo-score-history` entry point added |
+| `README.md` | `meo-score-history` added to CLI tools table and bash examples |
+
+**New tests (+58 tests, 1005 → 1063):**
+
+- `_date_range`: 4 tests (end=yesterday, 7-day start, 14-day start, 1-day)
+- `_dates_in_range`: 4 tests (newest first, count, single day, covers range)
+- `_store_short_name`: 4 tests (short unchanged, exactly-at-width, truncated, default-width=12)
+- `run_score_history` structure: 10 tests (keys, days, end, start, all stores by default, store filter, row count, newest first, zero snapshot count, rows newest first)
+- `run_score_history` with data: 8 tests (in-range included, outside excluded, count, empty rows for missing days, invalid date skipped, today=None uses JST, today excluded from window)
+- `_format_output`: 13 tests (title, date range, store name, legend, grade letter in row, missing symbol, snapshot count, no-stores placeholder, multiple stores in header, days count, D shown, all grades present)
+- `main()`: 8 tests (prints output, default 14 days, days flag, invalid days exits 1, days above max exits 1, unknown store exits 1, store filter, output file written, write error non-fatal)
+- State tests: +6 tests (empty, stores entry, most recent first, same-date replaces, capped at limit, independent entries)
+- Score tests: +3 tests (saves snapshot without filter, snapshot has all store keys, no snapshot with filter)
+
+**Coverage change:** 2732 → 2865 statements (133 new), 0 miss, **100% maintained**.
 
 ---
 

@@ -47,6 +47,7 @@ _REPLIED_REVIEW_CAPACITY = 500
 
 _POST_HISTORY_SIZE = 30   # max archived post entries per store
 _REPLY_HISTORY_SIZE = 50  # max archived reply entries per store
+_SCORE_HISTORY_SIZE = 60  # max daily score snapshots (approx 2 months)
 
 
 def _today() -> date:
@@ -296,6 +297,36 @@ def record_held_reviews(
 def get_held_reviews(store_key: str) -> list[dict[str, Any]]:
     """Return the held-review snapshot for store_key from the last run."""
     return list(_load().get("held_reviews", {}).get(store_key, []))
+
+
+# ---------------------------------------------------------------------------
+# Daily score snapshot — persists meo-score grades for trend tracking
+# ---------------------------------------------------------------------------
+
+def record_score_snapshot(date_str: str, grades: dict[str, str]) -> None:
+    """Save overall health grades for one day to the score snapshot history.
+
+    grades: {store_key: overall_grade_letter, ...}
+
+    If called more than once on the same date (e.g. a manual run followed by
+    the CI run) the earlier entry for that date is replaced so each date
+    appears at most once. Keeps the last _SCORE_HISTORY_SIZE entries.
+    """
+    state = _load()
+    history: list[dict] = state.get("score_history", [])
+    history = [e for e in history if e.get("date") != date_str]
+    history.insert(0, {"date": date_str, "grades": grades})
+    state["score_history"] = history[:_SCORE_HISTORY_SIZE]
+    _save(state)
+    logger.debug("Recorded score snapshot for %s.", date_str)
+
+
+def get_score_snapshots() -> list[dict]:
+    """Return score snapshots in reverse chronological order (newest first).
+
+    Each entry: {"date": "2026-08-04", "grades": {store_key: grade_letter, ...}}
+    """
+    return list(_load().get("score_history", []))
 
 
 # ---------------------------------------------------------------------------

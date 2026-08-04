@@ -43,7 +43,7 @@ except ImportError:  # pragma: no cover
     pass
 
 from .. import config as cfg
-from ..state import get_held_reviews, get_post_history, get_reply_history
+from ..state import get_held_reviews, get_post_history, get_reply_history, record_score_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -439,6 +439,10 @@ def main() -> None:
 
     if args.slack:
         _send_score_to_slack(output)
+
+    if not args.store:
+        snapshot_grades = {r["key"]: r["overall"] for r in results}
+        record_score_snapshot(today.isoformat(), snapshot_grades)
 
     if not all(r["healthy"] for r in results):
         sys.exit(1)

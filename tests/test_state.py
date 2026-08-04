@@ -506,3 +506,53 @@ def test_clear_held_reviews_all_stores(frozen_today):
 def test_clear_held_reviews_missing_store_returns_empty():
     cleared = state_mod.clear_held_reviews("nonexistent_store")
     assert cleared == []
+
+
+# ---------------------------------------------------------------------------
+# Score snapshots — record_score_snapshot / get_score_snapshots
+# ---------------------------------------------------------------------------
+
+def test_get_score_snapshots_empty_when_no_history():
+    assert state_mod.get_score_snapshots() == []
+
+
+def test_record_score_snapshot_stores_entry():
+    grades = {"the_body_kyoto": "S", "the_body_osaka_shinsaibashi": "B"}
+    state_mod.record_score_snapshot("2026-08-04", grades)
+    snaps = state_mod.get_score_snapshots()
+    assert len(snaps) == 1
+    assert snaps[0]["date"] == "2026-08-04"
+    assert snaps[0]["grades"]["the_body_kyoto"] == "S"
+    assert snaps[0]["grades"]["the_body_osaka_shinsaibashi"] == "B"
+
+
+def test_record_score_snapshot_most_recent_first():
+    state_mod.record_score_snapshot("2026-08-01", {"k": "A"})
+    state_mod.record_score_snapshot("2026-08-02", {"k": "B"})
+    snaps = state_mod.get_score_snapshots()
+    assert snaps[0]["date"] == "2026-08-02"
+    assert snaps[1]["date"] == "2026-08-01"
+
+
+def test_record_score_snapshot_same_date_replaces():
+    state_mod.record_score_snapshot("2026-08-04", {"k": "A"})
+    state_mod.record_score_snapshot("2026-08-04", {"k": "B"})
+    snaps = state_mod.get_score_snapshots()
+    assert len(snaps) == 1
+    assert snaps[0]["grades"]["k"] == "B"
+
+
+def test_record_score_snapshot_capped_at_limit():
+    for i in range(state_mod._SCORE_HISTORY_SIZE + 5):
+        state_mod.record_score_snapshot(f"2020-01-{i+1:02d}", {"k": "B"})
+    snaps = state_mod.get_score_snapshots()
+    assert len(snaps) == state_mod._SCORE_HISTORY_SIZE
+
+
+def test_record_score_snapshot_independent_entries():
+    state_mod.record_score_snapshot("2026-08-03", {"k1": "A"})
+    state_mod.record_score_snapshot("2026-08-04", {"k2": "S"})
+    snaps = state_mod.get_score_snapshots()
+    snap_by_date = {s["date"]: s["grades"] for s in snaps}
+    assert snap_by_date["2026-08-03"] == {"k1": "A"}
+    assert snap_by_date["2026-08-04"] == {"k2": "S"}
