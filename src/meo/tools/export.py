@@ -4,12 +4,14 @@ Reads the content archive written by the daily runner and outputs a
 UTF-8-BOM CSV suitable for opening in Excel or Google Sheets.
 
 Usage:
-    meo-export posts         [--store STORE_KEY] [--output FILE]
-    meo-export replies       [--store STORE_KEY] [--output FILE]
-    meo-export held-reviews  [--store STORE_KEY] [--output FILE]
+    meo-export posts          [--store STORE_KEY] [--output FILE]
+    meo-export replies        [--store STORE_KEY] [--output FILE]
+    meo-export held-reviews   [--store STORE_KEY] [--output FILE]
+    meo-export score-history  [--store STORE_KEY] [--output FILE]
     python -m meo.tools.export posts
     python -m meo.tools.export replies --store the_body_kyoto --output replies.csv
     python -m meo.tools.export held-reviews --output held.csv
+    python -m meo.tools.export score-history --output grades.csv
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from .. import state
 _POST_FIELDS = ["store_key", "store_name", "date", "theme", "text", "post_name"]
 _REPLY_FIELDS = ["store_key", "store_name", "date", "reviewer", "stars", "review_id", "reply"]
 _HELD_FIELDS = ["store_key", "store_name", "date", "review_date", "review_id", "reviewer", "stars", "comment"]
+_SCORE_HISTORY_FIELDS = ["date", "store_key", "store_name", "grade"]
 
 
 def export_posts(stores: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -94,6 +97,29 @@ def export_replies(stores: list[dict[str, Any]]) -> list[dict[str, str]]:
     return rows
 
 
+def export_score_history(stores: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Return CSV rows for the health-grade snapshot history.
+
+    One row per (date, store) combination, newest dates first, stores in
+    store-list order within each date.  The ``grade`` field is empty when a
+    snapshot predates the store's addition to the config.
+    """
+    snapshots = state.get_score_snapshots()
+    rows: list[dict[str, str]] = []
+    for snap in snapshots:
+        snap_date = snap.get("date", "")
+        grades: dict[str, str] = snap.get("grades", {})
+        for store in stores:
+            key = store["key"]
+            rows.append({
+                "date": snap_date,
+                "store_key": key,
+                "store_name": store["name"],
+                "grade": grades.get(key, ""),
+            })
+    return rows
+
+
 def _write_csv(
     rows: list[dict[str, str]],
     fieldnames: list[str],
@@ -129,10 +155,13 @@ def main() -> None:
     )
     parser.add_argument(
         "type",
-        choices=["posts", "replies", "held-reviews"],
+        choices=["posts", "replies", "held-reviews", "score-history"],
         help=(
-            "Which history to export: 'posts', 'replies', or 'held-reviews'. "
-            "'held-reviews' shows reviews currently awaiting manual reply."
+            "Which history to export: 'posts', 'replies', 'held-reviews', or "
+            "'score-history'. "
+            "'held-reviews' shows reviews currently awaiting manual reply. "
+            "'score-history' exports the daily health-grade snapshots saved by "
+            "meo-score (one row per date × store, newest first)."
         ),
     )
     parser.add_argument(
@@ -174,15 +203,24 @@ def main() -> None:
     elif args.type == "replies":
         rows = export_replies(stores)
         fieldnames = _REPLY_FIELDS
-    else:
+    elif args.type == "held-reviews":
         rows = export_held_reviews(stores)
         fieldnames = _HELD_FIELDS
+    else:
+        rows = export_score_history(stores)
+        fieldnames = _SCORE_HISTORY_FIELDS
 
     if not rows:
         if args.type == "held-reviews":
             print(
                 "No held reviews found. Either no reviews are below min_star_autoreply, "
                 "or the tool has not run in live mode yet.",
+                file=sys.stderr,
+            )
+        elif args.type == "score-history":
+            print(
+                "No score snapshots found in state.json. "
+                "Run 'meo-score' (without --store) at least once to create a snapshot.",
                 file=sys.stderr,
             )
         else:

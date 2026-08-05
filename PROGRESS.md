@@ -1,6 +1,88 @@
 # PROGRESS
 
-## Status: All milestones complete — 1063/1063 tests green (100% coverage)
+## Status: All milestones complete — 1078/1078 tests green (100% coverage)
+
+---
+
+## Completed this run (run 69)
+
+### feat(export): add `meo-export score-history` — CSV export of health-grade snapshots
+
+**Gap**: `meo-score-history` renders the stored health-grade snapshots as a
+terminal table, but there was no way to get the same data as a CSV for analysis
+in Excel or Google Sheets. The other three `meo-export` subcommands (`posts`,
+`replies`, `held-reviews`) all provide CSV output of their respective archives;
+the score-history archive had no equivalent export path.
+
+**Fix**: Added `score-history` as a fourth subcommand to `meo-export`.
+
+```
+meo-export score-history                     # to stdout
+meo-export score-history --output grades.csv # to file (UTF-8-BOM for Excel)
+meo-export score-history --store the_body_kyoto  # single store column
+```
+
+**CSV format** (long/tidy — one row per date × store, newest first):
+
+```
+date,store_key,store_name,grade
+2026-08-04,the_body_osaka_shinsaibashi,THE BODY 大阪 心斎橋店,B
+2026-08-04,the_body_kyoto,THE BODY 京都店,A
+2026-08-04,mybear_studio_kyoto,MYBEAR STUDIO 京都店,D
+2026-08-03,the_body_osaka_shinsaibashi,THE BODY 大阪 心斎橋店,B
+...
+```
+
+Long format is consistent with the other `meo-export` subcommands and lets the
+owner pivot in Excel (rows → columns) if they prefer the wide-table view that
+`meo-score-history` shows in the terminal.
+
+**Key design decisions:**
+
+- **Consistent with existing exports** — uses `_write_csv()` / `_SCORE_HISTORY_FIELDS`
+  / `--store` filter / `--output FILE` in exactly the same pattern as `posts`,
+  `replies`, and `held-reviews`
+- **Reads `state.get_score_snapshots()`** — no Google credentials needed; same
+  read-only pattern as the rest of the codebase
+- **Missing store in a snapshot → empty `grade` cell** — if a store was added
+  to config after the first snapshot was taken, older rows carry an empty `grade`
+  rather than raising a KeyError
+- **Helpful empty-data message** — when no snapshots exist yet, prints:
+  `Run 'meo-score' (without --store) at least once to create a snapshot.`
+- **Removed unreachable guard** — the first draft had `if key not in store_map: continue`
+  which could never fire (store_map is built from the same `stores` argument we
+  iterate); removed to keep 100% coverage without `pragma: no cover`
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/export.py` | Docstring updated; `_SCORE_HISTORY_FIELDS` constant added; `export_score_history()` new function; `main()` choices + handler + empty-data message updated |
+| `tests/test_export.py` | `_SCORE_SNAPSHOTS` fixture data; `_patch_score_snapshots` fixture; `_no_history` now also stubs `get_score_snapshots`; `TestExportScoreHistory` (9 tests); `TestMainScoreHistory` (6 tests) |
+| `README.md` | `meo-export score-history` row added to CLI tools table and bash examples |
+
+**New tests (+15 tests, 1063 → 1078):**
+
+- `TestExportScoreHistory`:
+  - `test_returns_one_row_per_date_per_store` — 2 snapshots × 2 stores = 4 rows
+  - `test_row_includes_required_fields` — date/store_key/store_name/grade all present
+  - `test_newest_snapshot_first` — row 0 is 2026-08-04, row 2 is 2026-08-03
+  - `test_store_key_and_name_populated` — kyoto row has correct name and grade A
+  - `test_grade_from_snapshot` — mybear row has grade D
+  - `test_missing_store_in_snapshot_yields_empty_grade` — store absent from snapshot → grade=""
+  - `test_store_filter_limits_rows` — single-store list → only that store's rows
+  - `test_empty_snapshots_returns_empty_list` — no snapshots → []
+  - `test_stores_in_store_list_order_within_date` — within same date, store order matches stores arg
+
+- `TestMainScoreHistory`:
+  - `test_score_history_prints_csv_header` — stdout contains date/grade/store_key
+  - `test_score_history_content_in_output` — 2026-08-04 and the_body_kyoto in output
+  - `test_score_history_grade_values_in_output` — A and D present in output
+  - `test_score_history_store_filter` — --store the_body_kyoto excludes mybear
+  - `test_score_history_output_file_created` — --output FILE creates CSV with date/grade
+  - `test_no_score_history_exits_0_with_helpful_message` — empty → exit 0; "meo-score" in stderr
+
+**Coverage change:** 2865 → 2881 statements (16 new), 0 miss, **100% maintained**.
 
 ---
 

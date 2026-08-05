@@ -96,11 +96,38 @@ def _patch_held_history(monkeypatch):
     monkeypatch.setattr("meo.tools.export.state.get_held_reviews", _hist)
 
 
+_SCORE_SNAPSHOTS = [
+    {
+        "date": "2026-08-04",
+        "grades": {
+            "the_body_kyoto": "A",
+            "mybear_studio_kyoto": "D",
+        },
+    },
+    {
+        "date": "2026-08-03",
+        "grades": {
+            "the_body_kyoto": "B",
+            "mybear_studio_kyoto": "C",
+        },
+    },
+]
+
+
 @pytest.fixture()
 def _no_history(monkeypatch):
     monkeypatch.setattr("meo.tools.export.state.get_post_history", lambda k: [])
     monkeypatch.setattr("meo.tools.export.state.get_reply_history", lambda k: [])
     monkeypatch.setattr("meo.tools.export.state.get_held_reviews", lambda k: [])
+    monkeypatch.setattr("meo.tools.export.state.get_score_snapshots", lambda: [])
+
+
+@pytest.fixture()
+def _patch_score_snapshots(monkeypatch):
+    monkeypatch.setattr(
+        "meo.tools.export.state.get_score_snapshots",
+        lambda: list(_SCORE_SNAPSHOTS),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -350,3 +377,133 @@ class TestExportHeldReviews:
         from meo.tools.export import export_held_reviews
         rows = export_held_reviews([s for s in _STORES if s["key"] == "mybear_studio_kyoto"])
         assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# export_score_history()
+# ---------------------------------------------------------------------------
+
+class TestExportScoreHistory:
+    def test_returns_one_row_per_date_per_store(self, _patch_score_snapshots):
+        from meo.tools.export import export_score_history
+        rows = export_score_history(_STORES)
+        # 2 snapshots × 2 stores in _STORES = 4 rows
+        assert len(rows) == 4
+
+    def test_row_includes_required_fields(self, _patch_score_snapshots):
+        from meo.tools.export import export_score_history
+        row = export_score_history(_STORES)[0]
+        assert "date" in row
+        assert "store_key" in row
+        assert "store_name" in row
+        assert "grade" in row
+
+    def test_newest_snapshot_first(self, _patch_score_snapshots):
+        from meo.tools.export import export_score_history
+        rows = export_score_history(_STORES)
+        assert rows[0]["date"] == "2026-08-04"
+        assert rows[2]["date"] == "2026-08-03"
+
+    def test_store_key_and_name_populated(self, _patch_score_snapshots):
+        from meo.tools.export import export_score_history
+        rows = export_score_history(_STORES)
+        row_kyoto = next(r for r in rows if r["store_key"] == "the_body_kyoto" and r["date"] == "2026-08-04")
+        assert row_kyoto["store_name"] == "THE BODY 京都店"
+        assert row_kyoto["grade"] == "A"
+
+    def test_grade_from_snapshot(self, _patch_score_snapshots):
+        from meo.tools.export import export_score_history
+        rows = export_score_history(_STORES)
+        row_mybear = next(r for r in rows if r["store_key"] == "mybear_studio_kyoto" and r["date"] == "2026-08-04")
+        assert row_mybear["grade"] == "D"
+
+    def test_missing_store_in_snapshot_yields_empty_grade(self, monkeypatch):
+        from meo.tools.export import export_score_history
+        # Snapshot has no entry for the_body_kyoto (store added after first snapshot)
+        monkeypatch.setattr(
+            "meo.tools.export.state.get_score_snapshots",
+            lambda: [{"date": "2026-08-01", "grades": {"mybear_studio_kyoto": "B"}}],
+        )
+        rows = export_score_history(_STORES)
+        row_kyoto = next(r for r in rows if r["store_key"] == "the_body_kyoto")
+        assert row_kyoto["grade"] == ""
+        assert row_kyoto["date"] == "2026-08-01"
+
+    def test_store_filter_limits_rows(self, _patch_score_snapshots):
+        from meo.tools.export import export_score_history
+        rows = export_score_history([s for s in _STORES if s["key"] == "the_body_kyoto"])
+        assert all(r["store_key"] == "the_body_kyoto" for r in rows)
+        assert len(rows) == 2  # one per snapshot date
+
+    def test_empty_snapshots_returns_empty_list(self, monkeypatch):
+        from meo.tools.export import export_score_history
+        monkeypatch.setattr("meo.tools.export.state.get_score_snapshots", lambda: [])
+        rows = export_score_history(_STORES)
+        assert rows == []
+
+    def test_stores_in_store_list_order_within_date(self, _patch_score_snapshots):
+        from meo.tools.export import export_score_history
+        rows = export_score_history(_STORES)
+        # Within date 2026-08-04: first row should be _STORES[0]=the_body_kyoto,
+        # second should be _STORES[1]=mybear_studio_kyoto
+        date_rows = [r for r in rows if r["date"] == "2026-08-04"]
+        assert date_rows[0]["store_key"] == "the_body_kyoto"
+        assert date_rows[1]["store_key"] == "mybear_studio_kyoto"
+
+
+# ---------------------------------------------------------------------------
+# main() — score-history type
+# ---------------------------------------------------------------------------
+
+class TestMainScoreHistory:
+    def test_score_history_prints_csv_header(self, capsys, _patch_score_snapshots, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "score-history"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "date" in out
+        assert "grade" in out
+        assert "store_key" in out
+
+    def test_score_history_content_in_output(self, capsys, _patch_score_snapshots, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "score-history"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "2026-08-04" in out
+        assert "the_body_kyoto" in out
+
+    def test_score_history_grade_values_in_output(self, capsys, _patch_score_snapshots, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "score-history"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "A" in out
+        assert "D" in out
+
+    def test_score_history_store_filter(self, capsys, _patch_score_snapshots, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "score-history", "--store", "the_body_kyoto"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "the_body_kyoto" in out
+        assert "mybear_studio_kyoto" not in out
+
+    def test_score_history_output_file_created(self, tmp_path, _patch_score_snapshots, monkeypatch):
+        out_path = tmp_path / "grades.csv"
+        monkeypatch.setattr(sys, "argv", ["meo-export", "score-history", "--output", str(out_path)])
+        from meo.tools.export import main
+        main()
+        assert out_path.exists()
+        content = out_path.read_text(encoding="utf-8-sig")
+        assert "date" in content
+        assert "grade" in content
+
+    def test_no_score_history_exits_0_with_helpful_message(self, capsys, _no_history, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "score-history"])
+        from meo.tools.export import main
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        err = capsys.readouterr().err
+        assert "meo-score" in err

@@ -168,6 +168,7 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-export posts` | Export post history to CSV (for Excel / Google Sheets) |
 | `meo-export replies` | Export review-reply history to CSV |
 | `meo-export held-reviews` | Export reviews held for manual reply to CSV (set when `min_star_autoreply > 1`) |
+| `meo-export score-history` | Export the daily health-grade snapshots (saved by `meo-score`) to CSV — one row per date × store, newest first; suitable for trend analysis in Excel or Google Sheets |
 | `meo-reset` | Reset state for one store or all stores (post guard, image/theme history, reply history) |
 | `meo-discover-locations` | List all GBP accounts and locations — prints ready-to-paste `location_id` values for `config/stores.yaml` (run once after API access is granted) |
 | `meo-stats` | Show aggregate statistics — total posts/replies, activity rates, theme frequency, and star-rating distribution across the full archive |
@@ -190,6 +191,7 @@ meo-discover-locations
 meo-export posts --output posts.csv
 meo-export replies --store the_body_kyoto --output kyoto_replies.csv
 meo-export held-reviews --output held.csv   # reviews awaiting manual reply
+meo-export score-history --output grades.csv  # health-grade trends for Excel / Sheets
 
 # Stats (once the tool has been running)
 meo-stats                               # all stores
