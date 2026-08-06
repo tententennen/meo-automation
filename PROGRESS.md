@@ -1,6 +1,126 @@
 # PROGRESS
 
-## Status: All milestones complete — 1078/1078 tests green (100% coverage)
+## Status: All milestones complete — 1145/1145 tests green (100% coverage)
+
+---
+
+## Completed this run (run 70)
+
+### feat(tools): add `meo-next` — forward-looking next-run preview
+
+**Gap**: Every diagnostic and reporting tool in the suite is retrospective — they
+show what *has* happened (post history, reply history, health grades, trends,
+export data). There was no single command to answer "what will the *next* scheduled
+run actually do for each store?"
+
+An operator returning from leave, or checking before a manual `--force` run, had to
+mentally combine several data sources:
+- `meo-score` → is the store healthy right now?
+- `meo-calendar` → when did it last post?
+- `meo-config-show` → what's the cadence setting?
+- `meo-review-alert` → are there held reviews?
+
+**Fix**: New command `meo-next` (also `python -m meo.tools.next`).
+
+For each store, shows:
+- **📝 投稿** — will the next run post (`✅ 実行予定`) or skip (`⏭ スキップ` /
+  `⏰ 時間帯外`), with the reason (last post date, cadence, next due date, or time window)
+- **⏰ 時間帯** — is the scheduled 09:00 JST time within the configured
+  `post_time_window_jst`? (no restriction shown when no window is set)
+- **📁 Drive** — is the Drive folder configured or still a TODO placeholder?
+- **💬 保留** — how many reviews are currently held for manual reply?
+
+A summary line: `合計: N/3 店舗が次回実行で投稿予定`.
+
+**"Next run" logic:**
+- Before 09:00 JST → today's run (hasn't fired yet)
+- At or after 09:00 JST → tomorrow's run (today's has already fired)
+- `--date YYYY-MM-DD` overrides to any specific date
+
+**Post-action decision mirrors `run_post_for_store()`:**
+1. `skip` — not enough days since last post (cadence guard)
+2. `skip_window` — post due but 09:00 JST falls outside `post_time_window_jst`
+3. `post` — due and within window (or no window)
+
+**Example output:**
+```
+MEO Automation — 次回実行プレビュー
+次回スケジュール実行: 2026-08-07 09:00 JST
+
+────────────────────────────────────────────────────────────────────────
+THE BODY 大阪 心斎橋店  (the_body_osaka_shinsaibashi)
+  📝 投稿:   ✅ 実行予定  (最終: 2026-08-05、cadence: 1日)
+  ⏰ 時間帯: ✅ 06:00-23:00 — 09:00 JST は範囲内
+  📁 Drive:  ⚠  未設定 (TODO placeholder)
+  💬 保留:   ⚠  2件の手動返信待ちレビュー
+────────────────────────────────────────────────────────────────────────
+THE BODY 京都店  (the_body_kyoto)
+  📝 投稿:   ⏭ スキップ  (最終: 2026-08-06、次回: 2026-08-09、あと2日)
+  ⏰ 時間帯: ✅ 06:00-23:00 — 09:00 JST は範囲内
+  📁 Drive:  ✅ 設定済
+  💬 保留:   ✅ なし
+────────────────────────────────────────────────────────────────────────
+MYBEAR STUDIO 京都店  (mybear_studio_kyoto)
+  📝 投稿:   ✅ 実行予定  (初回 — 投稿履歴なし)
+  ⏰ 時間帯: ✅ 制限なし
+  📁 Drive:  ⚠  未設定 (TODO placeholder)
+  💬 保留:   ✅ なし
+────────────────────────────────────────────────────────────────────────
+合計: 2/3 店舗が次回実行で投稿予定
+```
+
+**Key design decisions:**
+
+- **No Google credentials needed** — reads only `state.json` and config files
+  (same offline pattern as `meo-score`, `meo-calendar`, etc.)
+- **Mirrors `run_post_for_store()` decision logic exactly** — cadence guard first,
+  then time-window guard, so the preview is a faithful simulation of what the real
+  runner does
+- **`_check_time_window()` defensive on parse failure** — returns True (allows
+  post) on bad format, same as `posts.py`; misconfiguration surfaces at startup
+  via `meo-validate` rather than silently blocking the preview
+- **`get_last_post_date()` added to `state.py`** — clean public accessor for the
+  `last_post` section; avoids importing private `_load` into the tool
+- **`--store KEY [KEY …]`** — filter to one or more stores; unknown key exits 1
+- **`--date YYYY-MM-DD`** — simulate any run date (bad format exits 1)
+- **`--output FILE`** — save to file in addition to stdout; write errors are
+  non-fatal (warning only, exits 0)
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | `get_last_post_date()` new public function |
+| `src/meo/tools/next.py` | New module — 151 statements, 100% covered |
+| `tests/test_next.py` | 64 new tests (see below) |
+| `tests/test_state.py` | +3 tests for `get_last_post_date` |
+| `pyproject.toml` | `meo-next` entry point added |
+| `README.md` | `meo-next` added to CLI tools table and bash examples |
+
+**New tests (+67 tests, 1078 → 1145):**
+
+- `TestCheckTimeWindow` (12 tests): no window, empty, inside, outside, start/end boundary,
+  midnight-crossing inside/outside, invalid format, out-of-range hour (regex passes but
+  `time()` raises ValueError → returns True)
+- `TestNextRunDate` (4 tests): before-nine → today, after-nine → tomorrow,
+  exactly-nine → tomorrow, no-arg → returns a date
+- `TestRunNextDefaultDate` (1 test): `next_date=None` calls `_next_run_date()`
+- `TestRunNextStructure` (7 tests): required keys, date matches arg, default/custom
+  scheduled time, one result per store, store result keys
+- `TestRunNextPostAction` (8 tests): no history → post, yesterday+cadence1 → post,
+  run-date+cadence1 → skip, cadence2 → skip, skip populates next_post_due/days_until_due,
+  window-blocked → skip_window, window+due → post, invalid date string → post
+- `TestRunNextMeta` (7 tests): drive configured/TODO/empty, held count 0/N,
+  no window → time_window=None, store_key/name populated
+- `TestFormatOutput` (19 tests): title, date/time in header, store name/key,
+  post/skip/skip_window symbols, first-post label, skip shows next_post_due, time window
+  configured/制限なし, drive ✅/⚠, held count/なし, summary 1/2, summary 3/3
+- `TestMain` (8 tests): exit 0, prints output, unknown store exits 1, store filter,
+  date flag, invalid date exits 1, write error non-fatal, output file created
+- `test_state.py` (+3): returns None when no state, returns ISO string after record_post,
+  returns None for unknown store
+
+**Coverage change:** 2881 → 3034 statements (153 new), 0 miss, **100% maintained**.
 
 ---
 

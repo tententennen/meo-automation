@@ -160,6 +160,11 @@ def record_post(store_key: str) -> None:
     logger.debug("Recorded post date for %s: %s", store_key, today.isoformat())
 
 
+def get_last_post_date(store_key: str) -> str | None:
+    """Return the last post date for store_key as ISO string, or None if never posted."""
+    return _load().get("last_post", {}).get(store_key)
+
+
 # ---------------------------------------------------------------------------
 # Image rotation helpers
 # ---------------------------------------------------------------------------

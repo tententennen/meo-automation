@@ -556,3 +556,22 @@ def test_record_score_snapshot_independent_entries():
     snap_by_date = {s["date"]: s["grades"] for s in snaps}
     assert snap_by_date["2026-08-03"] == {"k1": "A"}
     assert snap_by_date["2026-08-04"] == {"k2": "S"}
+
+
+# ---------------------------------------------------------------------------
+# get_last_post_date
+# ---------------------------------------------------------------------------
+
+def test_get_last_post_date_returns_none_when_no_state():
+    assert state_mod.get_last_post_date("the_body_kyoto") is None
+
+
+def test_get_last_post_date_returns_iso_string_when_recorded(frozen_today):
+    state_mod.record_post("the_body_kyoto")
+    result = state_mod.get_last_post_date("the_body_kyoto")
+    assert result == frozen_today.isoformat()
+
+
+def test_get_last_post_date_returns_none_for_unknown_store(frozen_today):
+    state_mod.record_post("some_other_store")
+    assert state_mod.get_last_post_date("the_body_kyoto") is None

@@ -49,6 +49,7 @@ meo-held-reply-draft = "meo.tools.held_reply_draft:main"
 meo-calendar = "meo.tools.calendar:main"
 meo-score = "meo.tools.score:main"
 meo-score-history = "meo.tools.score_history:main"
+meo-next = "meo.tools.next:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
