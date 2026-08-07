@@ -50,6 +50,7 @@ meo-calendar = "meo.tools.calendar:main"
 meo-score = "meo.tools.score:main"
 meo-score-history = "meo.tools.score_history:main"
 meo-next = "meo.tools.next:main"
+meo-dismiss = "meo.tools.dismiss:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

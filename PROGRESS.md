@@ -1,6 +1,91 @@
 # PROGRESS
 
-## Status: All milestones complete — 1145/1145 tests green (100% coverage)
+## Status: All milestones complete — 1196/1196 tests green (100% coverage)
+
+---
+
+## Completed this run (run 71)
+
+### feat(tools): add `meo-dismiss` — permanently suppress held reviews
+
+**Gap**: Reviews below `min_star_autoreply` are held in the manual-reply
+queue (state.json `held_reviews`) and re-snapshotted on every daily run from
+the GBP API. There was no way to permanently remove a specific review from
+the queue — only `meo-reset held-reviews` existed, which clears the entire
+snapshot for a store. As a result, spam reviews, troll reviews, or reviews the
+owner has already replied to manually outside the tool would reappear in
+`meo-export held-reviews` and accumulate indefinitely.
+
+**Fix**: New command `meo-dismiss` plus supporting changes in `state.py` and
+`reviews.py`.
+
+**What `meo-dismiss` does for each dismissed review:**
+1. **Removes it from the current held snapshot immediately** — `meo-export
+   held-reviews` and `meo-held-reply-draft` stop showing it right away,
+   without waiting for the next daily run.
+2. **Adds the review ID to a persistent `dismissed_reviews` set in
+   state.json** — the daily runner (`run_reviews_for_store()`) filters out
+   dismissed IDs before the age filter, the cap, and the star-rating split.
+   Even if GBP keeps returning the review without an owner reply, it is
+   never auto-replied to and never re-queued for manual reply.
+
+**Example usage:**
+```
+meo-dismiss --list                                      # all stores
+meo-dismiss --list --store the_body_kyoto              # one store
+meo-dismiss --review-id rev001 --store the_body_kyoto  # dismiss one review
+meo-dismiss --all --store mybear_studio_kyoto          # dismiss all currently held
+meo-dismiss --undismiss --review-id rev001 --store the_body_kyoto  # undo
+```
+
+**Key design decisions:**
+
+- **No Google credentials required** — reads/writes only `state.json`;
+  same offline pattern as all other diagnostic tools
+- **Dismiss is idempotent** — calling `--review-id X --store Y` twice is safe
+- **`--all` uses the current held snapshot** — only reviews already in the
+  snapshot can be batch-dismissed; future reviews are not pre-emptively blocked
+- **`--undismiss` re-enables future holds** — the runner will re-queue the
+  review on the next daily run if it is still below `min_star_autoreply`
+- **Dismissed filter position** — applied after the locally-replied filter but
+  before the age filter, cap, and star-rating split, so dismissed reviews
+  contribute to neither the deferred count nor the manual count
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | `dismiss_held_review()`, `get_dismissed_reviews()`, `undismiss_held_review()` added; module docstring updated to document `dismissed_reviews` section |
+| `src/meo/reviews.py` | Import `get_dismissed_reviews`; dismissed filter inserted before age filter in `run_reviews_for_store()` |
+| `src/meo/tools/dismiss.py` | New module — 104 statements, 100% covered |
+| `tests/test_dismiss.py` | 38 new tests |
+| `tests/test_state.py` | +10 tests for the 3 new state functions |
+| `tests/test_reviews.py` | +3 tests for the dismissed filter in `run_reviews_for_store()` |
+| `pyproject.toml` | `meo-dismiss` entry point added |
+| `README.md` | `meo-dismiss` added to CLI tools table |
+
+**New tests (+51 tests, 1145 → 1196):**
+
+- `TestRunDismiss` (5 tests): adds to dismissed set, idempotent, removes from
+  held snapshot, leaves other held entries, does not affect other stores
+- `TestRunDismissAll` (4 tests): dismisses all held IDs, adds to set, empty
+  held returns `[]`, skips entries without `review_id`
+- `TestRunUndismiss` (3 tests): returns True when found, removes from set,
+  returns False when not found
+- `TestRunList` (4 tests): all stores, filtered to one store, empty result, store name
+- `TestFormatList` (4 tests): empty message, shows IDs, shows total count, shows store name
+- `TestFormatHelpers` (6 tests): new dismiss, already dismissed, dismiss-all success,
+  dismiss-all empty, undismiss found, undismiss not found
+- `TestMain` (12 tests): list/dismiss/dismiss-all/undismiss exit 0, confirm output,
+  unknown store exits 1, missing --store exits 1, missing --review-id exits 1,
+  list filtered by store
+- `test_state.py` (+10): empty, add, idempotent, removes from held snapshot,
+  leaves other held, does not affect other stores, undismiss True, undismiss
+  removes, undismiss False, undismiss leaves others
+- `test_reviews.py` (+3): dismissed review not auto-replied, dismissed low-star
+  review not held for manual reply, non-dismissed review still processed
+
+**Coverage change:** 3034 → 3172 statements (138 new), 0 miss, **100% maintained**.
 
 ---
 

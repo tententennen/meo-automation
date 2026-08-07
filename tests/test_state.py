@@ -575,3 +575,71 @@ def test_get_last_post_date_returns_iso_string_when_recorded(frozen_today):
 def test_get_last_post_date_returns_none_for_unknown_store(frozen_today):
     state_mod.record_post("some_other_store")
     assert state_mod.get_last_post_date("the_body_kyoto") is None
+
+
+# ---------------------------------------------------------------------------
+# dismiss_held_review / get_dismissed_reviews / undismiss_held_review
+# ---------------------------------------------------------------------------
+
+def test_get_dismissed_reviews_empty_when_no_state():
+    assert state_mod.get_dismissed_reviews("the_body_kyoto") == []
+
+
+def test_dismiss_held_review_adds_to_dismissed_set():
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    dismissed = state_mod.get_dismissed_reviews("the_body_kyoto")
+    assert "rev001" in dismissed
+
+
+def test_dismiss_held_review_idempotent():
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    dismissed = state_mod.get_dismissed_reviews("the_body_kyoto")
+    assert dismissed.count("rev001") == 1
+
+
+def test_dismiss_held_review_removes_from_held_snapshot():
+    held = [{"review_id": "rev001", "stars": "ONE"}]
+    state_mod.record_held_reviews("the_body_kyoto", held)
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    assert state_mod.get_held_reviews("the_body_kyoto") == []
+
+
+def test_dismiss_held_review_leaves_other_held_entries():
+    held = [{"review_id": "rev001", "stars": "ONE"}, {"review_id": "rev002", "stars": "TWO"}]
+    state_mod.record_held_reviews("the_body_kyoto", held)
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    remaining = state_mod.get_held_reviews("the_body_kyoto")
+    assert len(remaining) == 1
+    assert remaining[0]["review_id"] == "rev002"
+
+
+def test_dismiss_held_review_does_not_affect_other_stores():
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    assert state_mod.get_dismissed_reviews("the_body_osaka_shinsaibashi") == []
+
+
+def test_undismiss_held_review_returns_true_when_found():
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    result = state_mod.undismiss_held_review("the_body_kyoto", "rev001")
+    assert result is True
+
+
+def test_undismiss_held_review_removes_from_dismissed_set():
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    state_mod.undismiss_held_review("the_body_kyoto", "rev001")
+    assert state_mod.get_dismissed_reviews("the_body_kyoto") == []
+
+
+def test_undismiss_held_review_returns_false_when_not_found():
+    result = state_mod.undismiss_held_review("the_body_kyoto", "rev_unknown")
+    assert result is False
+
+
+def test_undismiss_held_review_does_not_affect_other_ids():
+    state_mod.dismiss_held_review("the_body_kyoto", "rev001")
+    state_mod.dismiss_held_review("the_body_kyoto", "rev002")
+    state_mod.undismiss_held_review("the_body_kyoto", "rev001")
+    dismissed = state_mod.get_dismissed_reviews("the_body_kyoto")
+    assert "rev001" not in dismissed
+    assert "rev002" in dismissed

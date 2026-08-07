@@ -592,3 +592,64 @@ def test_per_store_max_review_age_days_override():
         result = run_reviews_for_store(store_with_override, gbp, dry_run=False)
     gbp.reply_to_review.assert_not_called()
     assert result["replied"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Dismissed reviews filter
+# ---------------------------------------------------------------------------
+
+def _make_review_simple(review_id: str, star: str = "ONE") -> dict:
+    return {
+        "name": f"accounts/1/locations/1/reviews/{review_id}",
+        "reviewId": review_id,
+        "reviewer": {"displayName": "テスト"},
+        "starRating": star,
+        "comment": "コメント",
+    }
+
+
+def test_dismissed_review_is_not_auto_replied():
+    gbp = MagicMock()
+    review = _make_review_simple("dismissed_rev", "FIVE")
+    gbp.list_reviews.return_value = [review]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1, "max_review_age_days": 0}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf), \
+         patch("meo.reviews.get_dismissed_reviews", return_value=["dismissed_rev"]):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    gbp.reply_to_review.assert_not_called()
+    assert result["replied"] == 0
+
+
+def test_dismissed_review_is_not_held_for_manual_reply():
+    """A review that is dismissed and below min_star_autoreply must not appear in manual list."""
+    gbp = MagicMock()
+    review = _make_review_simple("dismissed_low", "ONE")
+    gbp.list_reviews.return_value = [review]
+    held_calls: list = []
+
+    def _capture_held(store_key, reviews):
+        held_calls.append(reviews)
+
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 3, "max_review_age_days": 0}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf), \
+         patch("meo.reviews.get_dismissed_reviews", return_value=["dismissed_low"]), \
+         patch("meo.reviews.record_held_reviews", side_effect=_capture_held):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    # manual count should be 0 because the review was filtered out before star-rating check
+    assert result["manual"] == 0
+
+
+def test_non_dismissed_review_still_processed():
+    gbp = MagicMock()
+    review = _make_review_simple("normal_rev", "FIVE")
+    gbp.list_reviews.return_value = [review]
+    gbp.reply_to_review.return_value = {}
+    conf = {"defaults": {"max_replies_per_run": 10, "min_star_autoreply": 1, "max_review_age_days": 0}}
+    with patch("meo.reviews.generate_reply", return_value="返信"), \
+         patch("meo.config.content", return_value=conf), \
+         patch("meo.reviews.get_dismissed_reviews", return_value=[]):
+        result = run_reviews_for_store(_STORE, gbp, dry_run=False)
+    assert result["replied"] == 1

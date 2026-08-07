@@ -10,6 +10,7 @@ from . import config as cfg
 from .business_profile import BusinessProfileClient
 from .content import generate_reply
 from .state import (
+    get_dismissed_reviews,
     get_replied_reviews,
     record_held_reviews,
     record_replied_review,
@@ -56,6 +57,20 @@ def run_reviews_for_store(
             logger.info(
                 "[%s] %d review(s) skipped (replied locally, awaiting GBP propagation).",
                 store_key, local_skip,
+            )
+
+    # --- Dismissed reviews filter --- #
+    # Reviews permanently dismissed via `meo-dismiss` are never auto-replied to
+    # or queued for manual reply, regardless of star rating or age.
+    dismissed_ids = set(get_dismissed_reviews(store_key))
+    if dismissed_ids:
+        before_dismissed = len(unreplied)
+        unreplied = [r for r in unreplied if _extract_review_id(r) not in dismissed_ids]
+        dismissed_count = before_dismissed - len(unreplied)
+        if dismissed_count:
+            logger.info(
+                "[%s] %d review(s) skipped (permanently dismissed).",
+                store_key, dismissed_count,
             )
 
     # --- Age filter --- #

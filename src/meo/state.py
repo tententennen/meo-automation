@@ -2,11 +2,12 @@
 
 State is stored in logs/state.json as a simple JSON object:
   {
-    "last_post":       {"the_body_kyoto": "2024-01-15", ...},
-    "recent_images":   {"the_body_kyoto": ["file_id_1", "file_id_2"], ...},
-    "recent_themes":   {"the_body_kyoto": ["季節のお手入れ情報", ...], ...},
-    "replied_reviews": {"the_body_kyoto": ["rev001", "rev002", ...], ...},
-    "held_reviews":    {"the_body_kyoto": [{"date": "2024-01-15", ...}, ...], ...}
+    "last_post":          {"the_body_kyoto": "2024-01-15", ...},
+    "recent_images":      {"the_body_kyoto": ["file_id_1", "file_id_2"], ...},
+    "recent_themes":      {"the_body_kyoto": ["季節のお手入れ情報", ...], ...},
+    "replied_reviews":    {"the_body_kyoto": ["rev001", "rev002", ...], ...},
+    "held_reviews":       {"the_body_kyoto": [{"date": "2024-01-15", ...}, ...], ...},
+    "dismissed_reviews":  {"the_body_kyoto": ["rev003", ...], ...}
   }
 
 Writes are atomic: a .tmp file is written first, then renamed over state.json via
@@ -400,3 +401,52 @@ def clear_held_reviews(store_key: str | None = None) -> list[str]:
     cleared = _clear_section("held_reviews", store_key)
     logger.debug("Cleared held reviews for: %s", cleared or "none")
     return cleared
+
+
+# ---------------------------------------------------------------------------
+# Dismissed review tracking — permanently suppress specific held reviews
+# ---------------------------------------------------------------------------
+
+def dismiss_held_review(store_key: str, review_id: str) -> None:
+    """Permanently dismiss a review so the runner never queues it for manual reply.
+
+    Also removes the review from the current held snapshot immediately so
+    get_held_reviews() and meo-export held-reviews reflect the change
+    without waiting for the next daily run.
+    """
+    state = _load()
+    dismissed = state.setdefault("dismissed_reviews", {})
+    ids: list[str] = dismissed.get(store_key, [])
+    if review_id not in ids:
+        ids.append(review_id)
+    dismissed[store_key] = ids
+    held: dict[str, list] = state.get("held_reviews", {})
+    if store_key in held:
+        held[store_key] = [r for r in held[store_key] if r.get("review_id") != review_id]
+    state["held_reviews"] = held
+    _save(state)
+    logger.debug("Dismissed review %s for %s.", review_id, store_key)
+
+
+def get_dismissed_reviews(store_key: str) -> list[str]:
+    """Return the list of permanently dismissed review IDs for store_key."""
+    return list(_load().get("dismissed_reviews", {}).get(store_key, []))
+
+
+def undismiss_held_review(store_key: str, review_id: str) -> bool:
+    """Remove a review ID from the dismissed set; returns True if it was found.
+
+    After undismissing, the review will reappear in the held queue on the
+    next daily run if it is still below min_star_autoreply.
+    """
+    state = _load()
+    dismissed = state.get("dismissed_reviews", {})
+    ids: list[str] = dismissed.get(store_key, [])
+    if review_id not in ids:
+        return False
+    ids.remove(review_id)
+    dismissed[store_key] = ids
+    state["dismissed_reviews"] = dismissed
+    _save(state)
+    logger.debug("Undismissed review %s for %s.", review_id, store_key)
+    return True
