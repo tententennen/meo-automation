@@ -54,6 +54,8 @@ htmlcov/
 # Logs (keep directory, not files)
 logs/*.log
 logs/*.jsonl
+logs/*.bak
+logs/*.tmp
 
 # OS
 .DS_Store
