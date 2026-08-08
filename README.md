@@ -184,8 +184,15 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-score-history` | Daily health-grade trend table — shows the overall grade per store for the last N complete days (default 14) in a compact table format; snapshots are saved automatically by `meo-score` on each full (unfiltered) run; no Google credentials required |
 | `meo-next` | Forward-looking run preview — shows for each store whether the next 09:00 JST scheduled run will post or skip (with reason), whether the Drive folder is configured, and how many reviews are held for manual reply; `--date YYYY-MM-DD` to simulate a specific run date; no Google credentials required |
 | `meo-dismiss` | Permanently dismiss held reviews from the manual-reply queue — dismissed reviews are removed from the held snapshot immediately and skipped by all future runs even if they remain in the GBP API without a reply (e.g. spam, reviews already handled externally); `--undismiss` to undo; `--all` to dismiss every currently held review for a store; no Google credentials required |
+| `meo-error-alert` | Send a Slack alert when any store has accumulated >= N consecutive live-run failures (default N=2); reads state.json written by `meo-run` after each live run; dry-run results are excluded so they never mask real failures; also runs automatically after each daily CI job; `--threshold N` to override; `--dry-run` to print without sending; no Google credentials required |
 
 ```bash
+# Check for consecutive run errors (no credentials needed)
+meo-error-alert                          # default threshold (2 consecutive failures)
+meo-error-alert --threshold 3            # alert only after 3 consecutive failures
+meo-error-alert --dry-run                # print alert without sending to Slack
+meo-error-alert --store the_body_kyoto  # check one store only
+
 # Check what the next scheduled run will do (no credentials needed)
 meo-next
 meo-next --store the_body_kyoto           # single store

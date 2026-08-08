@@ -324,3 +324,162 @@ def test_reviews_result_with_errors_key_causes_exit_1():
             main()
 
     assert exc.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# record_run_result integration — run-error streak tracking
+# ---------------------------------------------------------------------------
+
+def test_main_records_success_for_clean_run():
+    """record_run_result is called with success=True when no errors occur."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 1, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", True, None)
+
+
+def test_main_records_failure_on_post_exception():
+    """record_run_result is called with error_type='post_error' when post raises."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=RuntimeError("GBP timeout")), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "post_error")
+
+
+def test_main_records_failure_on_review_exception():
+    """record_run_result is called with error_type='review_error' when reviews raise."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=RuntimeError("Review API error")), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "review_error")
+
+
+def test_main_records_both_error_when_post_and_review_fail():
+    """record_run_result uses error_type='both_error' when both steps raise."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=RuntimeError("post fail")), \
+         patch("meo.main.run_reviews_for_store", side_effect=RuntimeError("review fail")), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "both_error")
+
+
+def test_main_records_failure_on_review_errors_list():
+    """record_run_result uses review_error when reviews returns non-empty errors list."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    def reviews_with_errors(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "errors": ["GBP returned 500"]}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=reviews_with_errors), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "review_error")
+
+
+def test_main_does_not_record_run_result_in_dry_run():
+    """record_run_result must NOT be called during --dry-run."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "dry_run", "post_text": "テスト"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo", "--dry-run"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_not_called()
+
+
+def test_main_does_not_record_run_result_for_config_skipped_store():
+    """record_run_result must NOT be called when a store is skipped due to TODO location_id."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    todo_store = _fake_store("the_body_kyoto", location_id="TODO_fill_in_location_id")
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=[todo_store]), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_not_called()

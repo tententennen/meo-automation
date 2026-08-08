@@ -39,6 +39,7 @@ from .drive import DriveClient
 from .notify import send_run_summary
 from .posts import run_post_for_store
 from .reviews import run_reviews_for_store
+from .state import record_run_result
 from .validator import validate_all
 
 _LOG_DIR = Path(__file__).resolve().parents[2] / "logs"  # src/meo/main.py → parents[2] = repo root
@@ -174,6 +175,25 @@ def main() -> None:
                 logger.error("[%s] Reviews failed: %s", store_key, exc, exc_info=True)
                 store_results["reviews"] = {"error": str(exc)}
                 had_error = True
+
+        # Record run result for consecutive-failure alerting (live runs only).
+        # Dry-run results are excluded so preview/test runs don't affect the streak.
+        if not args.dry_run:
+            post_err = isinstance(store_results.get("post"), dict) and bool(
+                store_results["post"].get("error")
+            )
+            review_err = isinstance(store_results.get("reviews"), dict) and bool(
+                store_results["reviews"].get("error") or store_results["reviews"].get("errors")
+            )
+            if post_err and review_err:
+                _error_type: str | None = "both_error"
+            elif post_err:
+                _error_type = "post_error"
+            elif review_err:
+                _error_type = "review_error"
+            else:
+                _error_type = None
+            record_run_result(store_key, _error_type is None, _error_type)
 
         all_results.append(store_results)
 

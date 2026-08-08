@@ -132,6 +132,18 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m meo.tools.score --slack
 
+      # Alert when any store has accumulated consecutive live-run failures.
+      # Runs after the main run and health-score steps so state.json is fully
+      # updated.  Exits 0 when all stores are within threshold; exits 1 when
+      # an alert fires — continue-on-error keeps the step non-fatal so the
+      # state-save and log-upload steps always run.
+      - name: Alert on consecutive run errors
+        if: always()
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m meo.tools.error_alert || true
+
       # Save state after the run so the next run's duplicate guard has context.
       # continue-on-error: true guards against the first-ever run where state.json
       # may not exist (e.g., dry-run with no stores configured).

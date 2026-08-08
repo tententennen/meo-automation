@@ -643,3 +643,80 @@ def test_undismiss_held_review_does_not_affect_other_ids():
     dismissed = state_mod.get_dismissed_reviews("the_body_kyoto")
     assert "rev001" not in dismissed
     assert "rev002" in dismissed
+
+
+# ---------------------------------------------------------------------------
+# record_run_result / get_run_streak
+# ---------------------------------------------------------------------------
+
+def test_get_run_streak_returns_defaults_when_no_state():
+    streak = state_mod.get_run_streak("my_store")
+    assert streak["consecutive_failures"] == 0
+    assert streak["consecutive_successes"] == 0
+    assert streak["last_error_type"] is None
+    assert streak["last_error_date"] is None
+
+
+def test_record_run_result_success_increments_successes(frozen_today):
+    state_mod.record_run_result("my_store", True)
+    streak = state_mod.get_run_streak("my_store")
+    assert streak["consecutive_successes"] == 1
+    assert streak["consecutive_failures"] == 0
+
+
+def test_record_run_result_success_resets_failures(frozen_today):
+    state_mod.record_run_result("my_store", False, "post_error")
+    state_mod.record_run_result("my_store", False, "post_error")
+    state_mod.record_run_result("my_store", True)
+    streak = state_mod.get_run_streak("my_store")
+    assert streak["consecutive_failures"] == 0
+    assert streak["consecutive_successes"] == 1
+
+
+def test_record_run_result_success_clears_error_info(frozen_today):
+    state_mod.record_run_result("my_store", False, "review_error")
+    state_mod.record_run_result("my_store", True)
+    streak = state_mod.get_run_streak("my_store")
+    assert streak["last_error_type"] is None
+    assert streak["last_error_date"] is None
+
+
+def test_record_run_result_failure_increments_failures(frozen_today):
+    state_mod.record_run_result("my_store", False, "post_error")
+    state_mod.record_run_result("my_store", False, "post_error")
+    streak = state_mod.get_run_streak("my_store")
+    assert streak["consecutive_failures"] == 2
+    assert streak["consecutive_successes"] == 0
+
+
+def test_record_run_result_failure_records_error_type(frozen_today):
+    state_mod.record_run_result("my_store", False, "review_error")
+    assert state_mod.get_run_streak("my_store")["last_error_type"] == "review_error"
+
+
+def test_record_run_result_failure_records_error_date(frozen_today):
+    state_mod.record_run_result("my_store", False, "post_error")
+    assert state_mod.get_run_streak("my_store")["last_error_date"] == _FIXED_TODAY.isoformat()
+
+
+def test_record_run_result_stores_independent(frozen_today):
+    state_mod.record_run_result("store_a", False, "post_error")
+    state_mod.record_run_result("store_b", True)
+    assert state_mod.get_run_streak("store_a")["consecutive_failures"] == 1
+    assert state_mod.get_run_streak("store_b")["consecutive_failures"] == 0
+
+
+def test_record_run_result_multiple_success_accumulate(frozen_today):
+    state_mod.record_run_result("my_store", True)
+    state_mod.record_run_result("my_store", True)
+    state_mod.record_run_result("my_store", True)
+    assert state_mod.get_run_streak("my_store")["consecutive_successes"] == 3
+
+
+def test_get_run_streak_returns_recorded_data(frozen_today):
+    state_mod.record_run_result("my_store", False, "both_error")
+    state_mod.record_run_result("my_store", False, "both_error")
+    streak = state_mod.get_run_streak("my_store")
+    assert streak["consecutive_failures"] == 2
+    assert streak["last_error_type"] == "both_error"
+    assert streak["last_error_date"] == _FIXED_TODAY.isoformat()

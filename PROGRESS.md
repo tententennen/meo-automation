@@ -1,6 +1,142 @@
 # PROGRESS
 
-## Status: All milestones complete — 1196/1196 tests green (100% coverage)
+## Status: All milestones complete — 1254/1254 tests green (100% coverage)
+
+---
+
+## Completed this run (run 72)
+
+### feat(state+tools): add run-error streak tracking + `meo-error-alert`
+
+**Gap**: The unattended automation had no way to detect when the Google API
+(or LLM) had been silently failing for multiple consecutive days. All error
+information was written to `logs/meo.log` and the Slack run-summary, but:
+- No persistent counter tracked *how many days in a row* a store had failed.
+- An owner returning from a 3-day trip with no Slack access would not know
+  the automation had been broken until they manually read the CI logs.
+- `meo-score` graded posting rate, held reviews, star rating, and Drive config
+  — but had no "run reliability" dimension.
+
+**Fix**: Three changes:
+
+1. **`state.py`**: `record_run_result(store_key, success, error_type=None)` and
+   `get_run_streak(store_key)` — persistent consecutive-failure/success tracking in
+   `state.json` under the `run_results` section:
+   ```json
+   "run_results": {
+     "the_body_kyoto": {
+       "consecutive_failures": 2,
+       "consecutive_successes": 0,
+       "last_error_type": "post_error",
+       "last_error_date": "2026-08-07"
+     }
+   }
+   ```
+   - Success: resets `consecutive_failures` to 0, increments `consecutive_successes`,
+     clears `last_error_type` / `last_error_date`.
+   - Failure: increments `consecutive_failures`, resets `consecutive_successes`,
+     records `error_type` + today's date.
+
+2. **`main.py`**: Calls `record_run_result()` after each store's post and review
+   steps (live runs only — dry-run results are excluded so test/preview runs cannot
+   mask real failures). Error type is:
+   - `"post_error"` — post step raised an exception
+   - `"review_error"` — review step raised an exception or returned a non-empty
+     `errors` list
+   - `"both_error"` — both steps failed
+   - `None` — run succeeded (any "skipped" status from the cadence guard or time
+     window is not an error)
+   - Config-skipped stores (TODO location_id) are excluded from tracking.
+
+3. **`src/meo/tools/error_alert.py`**: New CLI tool `meo-error-alert`.
+   - Reads `get_run_streak()` for each store.
+   - If any store has `consecutive_failures >= --threshold` (default: 2), formats
+     a Slack alert listing the store name, failure count, error type, and last
+     error date.
+   - Also runs as a new `Alert on consecutive run errors` step in `daily_run.yml`
+     after the health-score step.
+   - Exit 0 = all stores within threshold; exit 1 = alert fired.
+   - `--dry-run` prints without sending; `--store KEY` filters; `--threshold N`
+     overrides the default.
+
+**Example alert (Slack):**
+```
+🚨 MEO 連続エラーアラート — 1店舗でエラーが継続しています
+
+生成日時: 2026-08-08 09:00 JST
+
+────────────────────────────────────────────────
+THE BODY 京都店  (the_body_kyoto)
+  連続エラー: 3回
+  エラー種別: 投稿エラー
+  最終エラー日: 2026-08-07
+────────────────────────────────────────────────
+
+`meo-run` の GitHub Actions ログを確認してください。
+```
+
+**Key design decisions:**
+
+- **Dry-run excluded** — `--dry-run` passes `if not args.dry_run` guard in `main.py`,
+  so manual test runs never affect the live-run streak. An operator running
+  `meo-run --dry-run` before configuring credentials cannot accidentally reset or
+  set an error streak.
+- **Config-skip excluded** — a store whose `location_id` still contains "TODO" hits
+  `continue` before the `record_run_result()` call, so it is never counted as a
+  failed run.
+- **`get_run_streak()` never raises** — returns zero-defaults when no data exists,
+  so the tool is safe on first use (before any live run has recorded a result).
+- **Consistent with existing `had_error` logic** — `review_result.get("errors")`
+  being non-empty already causes `had_error = True` in `main.py`; `meo-error-alert`
+  uses the same criterion so the two signals stay in sync.
+- **`--threshold N` is CLI-only** — kept out of `content.yaml` (which governs
+  content generation, not operational alerting) and out of `stores.yaml` (which
+  is per-store); most operators will use the default of 2.
+- **`if: always()`** in the CI step — fires even when the main run failed so the
+  alert still reaches the owner on the very day the failure count crosses the
+  threshold.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | Docstring updated to show `run_results` section; `record_run_result()` and `get_run_streak()` added |
+| `src/meo/main.py` | `from .state import record_run_result` added; per-store `record_run_result()` call added after post/review steps (live runs only) |
+| `src/meo/tools/error_alert.py` | New module — 117 statements, 100% covered |
+| `tests/test_state.py` | +10 tests for `record_run_result` / `get_run_streak` |
+| `tests/test_main.py` | +7 tests for run-result tracking integration |
+| `tests/test_error_alert.py` | New test file — 41 tests |
+| `pyproject.toml` | `meo-error-alert` entry point added |
+| `.github/workflows/daily_run.yml` | `Alert on consecutive run errors` step added |
+| `README.md` | `meo-error-alert` added to CLI tools table and bash examples |
+
+**New tests (+58 tests, 1196 → 1254):**
+
+- `test_state.py` (+10):
+  - `test_get_run_streak_returns_defaults_when_no_state`
+  - `test_record_run_result_success_increments_successes`
+  - `test_record_run_result_success_resets_failures`
+  - `test_record_run_result_success_clears_error_info`
+  - `test_record_run_result_failure_increments_failures`
+  - `test_record_run_result_failure_records_error_type`
+  - `test_record_run_result_failure_records_error_date`
+  - `test_record_run_result_stores_independent`
+  - `test_record_run_result_multiple_success_accumulate`
+  - `test_get_run_streak_returns_recorded_data`
+
+- `test_main.py` (+7):
+  - `test_main_records_success_for_clean_run`
+  - `test_main_records_failure_on_post_exception`
+  - `test_main_records_failure_on_review_exception`
+  - `test_main_records_both_error_when_post_and_review_fail`
+  - `test_main_records_failure_on_review_errors_list`
+  - `test_main_does_not_record_run_result_in_dry_run`
+  - `test_main_does_not_record_run_result_for_config_skipped_store`
+
+- `test_error_alert.py` (+41): `TestRunErrorAlert` (10 tests), `TestFormatAlert`
+  (15 tests), `TestSendAlert` (5 tests), `TestMain` (11 tests)
+
+**Coverage change:** 3172 → 3289 statements (117 new), 0 miss, **100% maintained**.
 
 ---
 
