@@ -109,6 +109,50 @@ def test_upload_media_sends_multipart_content_type(client, mock_session):
 
 
 # ---------------------------------------------------------------------------
+# list_local_posts
+# ---------------------------------------------------------------------------
+
+def test_list_local_posts_returns_all_posts(client, mock_session):
+    mock_session.get.return_value = _ok({
+        "localPosts": [
+            {"name": f"{_LOC}/localPosts/1", "summary": "投稿1", "state": "LIVE"},
+            {"name": f"{_LOC}/localPosts/2", "summary": "投稿2", "state": "PROCESSING"},
+        ]
+    })
+    posts = client.list_local_posts(_LOC)
+    assert len(posts) == 2
+    assert posts[0]["state"] == "LIVE"
+
+
+def test_list_local_posts_returns_empty_list_when_none(client, mock_session):
+    mock_session.get.return_value = _ok({})
+    posts = client.list_local_posts(_LOC)
+    assert posts == []
+
+
+def test_list_local_posts_handles_pagination(client, mock_session):
+    page1 = _ok({"localPosts": [{"name": f"{_LOC}/localPosts/1"}], "nextPageToken": "tok1"})
+    page2 = _ok({"localPosts": [{"name": f"{_LOC}/localPosts/2"}]})
+    mock_session.get.side_effect = [page1, page2]
+    posts = client.list_local_posts(_LOC)
+    assert len(posts) == 2
+    assert mock_session.get.call_count == 2
+    second_call_params = mock_session.get.call_args_list[1].kwargs["params"]
+    assert second_call_params.get("pageToken") == "tok1"
+
+
+def test_list_local_posts_raises_on_http_error(client, mock_session):
+    resp = MagicMock()
+    resp.ok = False
+    resp.status_code = 403
+    resp.json.return_value = {"error": {"message": "Access denied"}}
+    resp.raise_for_status.side_effect = requests.HTTPError("403 Client Error")
+    mock_session.get.return_value = resp
+    with pytest.raises(requests.HTTPError):
+        client.list_local_posts(_LOC)
+
+
+# ---------------------------------------------------------------------------
 # list_reviews
 # ---------------------------------------------------------------------------
 

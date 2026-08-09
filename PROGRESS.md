@@ -1,6 +1,53 @@
 # PROGRESS
 
-## Status: All milestones complete — 1254/1254 tests green (100% coverage)
+## Status: All milestones complete — 1284/1284 tests green (100% coverage)
+
+---
+
+## Completed this run (run 73)
+
+### feat(gbp+tools): add `list_local_posts()` + `meo-live-posts` diagnostic tool
+
+**Gap**: There was no way to query what posts are currently live on GBP without
+logging into the Business Profile console. `meo-report` reads only from
+`state.json` (local records), so if the cache was ever reset or a post was made
+outside the tool, the state would diverge from reality.
+
+**Fix**: Two additions:
+
+1. **`business_profile.py`**: `list_local_posts(location_id, page_size=20)` —
+   a paginated GBP API read that returns all currently active local posts for a
+   location (LIVE, PROCESSING, REJECTED). Follows the same retry/backoff and
+   auth pattern as `list_reviews()`. Mirrors the documented API shape:
+   ```
+   GET https://mybusiness.googleapis.com/v4/{location}/localPosts
+   ```
+   Note: STANDARD (最新情報) posts expire after 6 months, so the list naturally
+   shrinks as old posts expire — this is expected.
+
+2. **`tools/live_posts.py`** — new `meo-live-posts` CLI tool:
+   - Queries GBP for all live posts per store (read-only, no writes).
+   - Cross-references them against `state.json`'s post archive to produce
+     a reconciliation:
+     - **Tracked**: live on GBP AND in `state.json` — expected.
+     - **Untracked**: live on GBP but NOT in `state.json` — manual post,
+       state reset, or first run before archive was populated.
+     - **Archived / no longer live**: in `state.json` but NOT live — post
+       expired (>6 months), deleted manually, or rejected by GBP.
+   - Flags and state breakdown (LIVE / 処理中 / 却下) in the output.
+   - `--json` flag for machine-readable output (omits raw `live_posts` body).
+   - `--store` to check a single store.
+   - Exits 0 when all stores respond without error; exits 1 on any failure.
+
+   Typical usage after the first live run:
+   ```bash
+   meo-live-posts                       # all stores
+   meo-live-posts --store the_body_kyoto
+   meo-live-posts --json | jq '.[].tracked_count'
+   ```
+
+**Tests**: 30 new tests in `tests/test_live_posts.py`; 4 new tests in
+`tests/test_business_profile.py`. Total: 1284 (+30 net).
 
 ---
 

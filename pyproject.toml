@@ -52,6 +52,7 @@ meo-score-history = "meo.tools.score_history:main"
 meo-next = "meo.tools.next:main"
 meo-dismiss = "meo.tools.dismiss:main"
 meo-error-alert = "meo.tools.error_alert:main"
+meo-live-posts = "meo.tools.live_posts:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

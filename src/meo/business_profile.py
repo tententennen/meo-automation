@@ -179,6 +179,37 @@ class BusinessProfileClient:
         logger.info("Uploaded media to GBP for %s: %s", location_id, google_url)
         return google_url
 
+    def list_local_posts(
+        self, location_id: str, page_size: int = 20
+    ) -> list[dict[str, Any]]:
+        """Return all local posts for a location (handles pagination automatically).
+
+        Ref: https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/list
+
+        Each item contains at minimum:
+          name, summary, state, createTime, updateTime, topicType
+        State values: LIVE, REJECTED, PROCESSING, UNKNOWN_STATE
+
+        Note: STANDARD (最新情報) posts expire after 6 months; only active posts
+        are returned, so the list shrinks over time as old posts expire.
+        """
+        url = _LOCAL_POSTS_BASE.format(location=location_id)
+        posts: list[dict[str, Any]] = []
+        params: dict[str, Any] = {"pageSize": page_size}
+
+        while True:
+            resp = self._session.get(url, params=params)
+            _raise_for_status(resp)
+            data = resp.json()
+            posts.extend(data.get("localPosts", []))
+            next_token = data.get("nextPageToken")
+            if not next_token:
+                break
+            params["pageToken"] = next_token
+
+        logger.info("Fetched %d local posts for %s", len(posts), location_id)
+        return posts
+
     # ------------------------------------------------------------------
     # Reviews
     # ------------------------------------------------------------------
