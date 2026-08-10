@@ -53,6 +53,7 @@ meo-next = "meo.tools.next:main"
 meo-dismiss = "meo.tools.dismiss:main"
 meo-error-alert = "meo.tools.error_alert:main"
 meo-live-posts = "meo.tools.live_posts:main"
+meo-content-check = "meo.tools.content_check:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

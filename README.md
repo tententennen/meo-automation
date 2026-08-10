@@ -185,8 +185,15 @@ State (`logs/state.json`) is stored in the `meo_logs` Docker named volume and pe
 | `meo-next` | Forward-looking run preview — shows for each store whether the next 09:00 JST scheduled run will post or skip (with reason), whether the Drive folder is configured, and how many reviews are held for manual reply; `--date YYYY-MM-DD` to simulate a specific run date; no Google credentials required |
 | `meo-dismiss` | Permanently dismiss held reviews from the manual-reply queue — dismissed reviews are removed from the held snapshot immediately and skipped by all future runs even if they remain in the GBP API without a reply (e.g. spam, reviews already handled externally); `--undismiss` to undo; `--all` to dismiss every currently held review for a store; no Google credentials required |
 | `meo-error-alert` | Send a Slack alert when any store has accumulated >= N consecutive live-run failures (default N=2); reads state.json written by `meo-run` after each live run; dry-run results are excluded so they never mask real failures; also runs automatically after each daily CI job; `--threshold N` to override; `--dry-run` to print without sending; no Google credentials required |
+| `meo-content-check` | AI content quality monitor — shows the full untruncated text of the last N posts per store (default: 3) with character count and Japanese script ratio; flags low Japanese ratio (< 80%), posts significantly shorter than the configured limit, and repeated opening sentences across consecutive posts; exits 1 when any concern is detected so it can be used as a CI quality gate; `--last N`, `--store KEY`, `--json`; no Google credentials required |
 
 ```bash
+# Check content quality of recent AI-generated posts (no credentials needed)
+meo-content-check                         # last 3 posts per store
+meo-content-check --last 5               # last 5 posts per store
+meo-content-check --store the_body_kyoto  # single store
+meo-content-check --json                 # machine-readable JSON output
+
 # Check for consecutive run errors (no credentials needed)
 meo-error-alert                          # default threshold (2 consecutive failures)
 meo-error-alert --threshold 3            # alert only after 3 consecutive failures

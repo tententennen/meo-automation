@@ -1,6 +1,130 @@
 # PROGRESS
 
-## Status: All milestones complete — 1284/1284 tests green (100% coverage)
+## Status: All milestones complete — 1340/1340 tests green (100% coverage)
+
+---
+
+## Completed this run (run 74)
+
+### feat(tools): add `meo-content-check` — AI content quality monitor
+
+**Gap**: Existing tools (`meo-report`, `meo-export`) show post history but
+not in a form optimised for quality review:
+- `meo-report` truncates post text at 100 characters (preview only).
+- `meo-export` writes a CSV that requires a spreadsheet app to read.
+- No tool flagged *quality concerns* in the generated Japanese text: garbled
+  AI output (low Japanese script ratio) or repetitive opening sentences
+  would go unnoticed until the owner manually checked each post.
+
+**Fix**: New tool `meo-content-check` (`src/meo/tools/content_check.py`):
+
+1. **Full post text display** — shows the complete, untruncated text of the
+   last N posts per store (default: 3, configurable via `--last N`).
+
+2. **Japanese character ratio** — counts Hiragana, Katakana, and CJK
+   Ideographs (kanji) against the total character count. Flags posts with
+   a ratio below 80% (configurable via `_MIN_JP_RATIO`). This catches:
+   - AI accidentally generating English instead of Japanese
+   - Garbled or hallucinated non-Japanese output
+   - Excessive ASCII punctuation / boilerplate
+
+3. **Opening-phrase repetition** — extracts the first sentence of each post
+   (text up to the first 。！？ or newline, within the first 40 characters)
+   and flags pairs of posts with an identical opening. Catches cases where
+   the AI converges to the same stock phrase across consecutive daily runs
+   despite `recent_context_line` diversity nudging.
+
+4. **Short-post detection** — flags posts below 30% of `max_post_chars`
+   (e.g., < 150 chars when the limit is 500). Catches AI responses that are
+   mysteriously truncated.
+
+5. **Exit 1 on concerns** — the tool exits 1 when any concern is detected,
+   making it safe to use in CI as a quality gate.
+
+**Usage:**
+```bash
+meo-content-check                         # last 3 posts per store
+meo-content-check --last 5               # last 5 posts
+meo-content-check --store the_body_kyoto  # single store
+meo-content-check --json                 # machine-readable JSON
+```
+
+**Example output (concern detected):**
+```
+MEO Automation — Content Quality Check
+Generated: 2026-08-10 09:05 JST  |  直近 3 件の投稿を確認
+──────────────────────────────────────────────────────────────
+THE BODY 京都店  (the_body_kyoto)
+  上限: 500 文字
+
+  [1] 2026-08-10  theme: 秋のキャンペーン
+  ✓  342 文字  日本語率: 93%
+  本文:
+    秋のお手入れシーズン到来！今月は...
+
+  [2] 2026-08-09  theme: お知らせ
+  ⚠  189 文字  日本語率: 51%
+  本文:
+    This month's special campaign...
+  ⚠ 日本語率が低い (51%; 目標: 80% 以上)
+
+──────────────────────────────────────────────────────────────
+⚠ 確認が必要な投稿があります
+```
+
+**Key design decisions:**
+
+- **Sentence-boundary opening extraction** — `_opening_phrase()` finds the
+  first sentence-ending punctuation (。！？ newline) within 40 chars rather
+  than a raw 40-char prefix. This means a 19-char first sentence ("今月の
+  キャンペーン情報をお届けします。") is correctly identified as the opening
+  and repetition is detected even when the sentences are shorter than the
+  character window.
+
+- **Punctuation excluded from JP ratio** — CJK punctuation (U+3000–U+303F,
+  e.g. 。、) and full-width Latin (U+FF01–U+FF5E) are intentionally
+  excluded from the Japanese-character count. This prevents a post that is
+  mostly punctuation from appearing falsely high. Hiragana, Katakana, and
+  CJK Ideographs are the meaningful signal.
+
+- **`max_chars=0` suppresses short-post concern** — when `max_post_chars`
+  is 0 (e.g. a store with no limit configured), no short-post concern is
+  raised to avoid a false alarm.
+
+- **Read-only, no credentials needed** — reads only `state.json` and
+  `config/`. No Google or LLM credentials required; safe to run daily in CI
+  after the main run.
+
+**Files added:**
+
+| File | Purpose |
+|---|---|
+| `src/meo/tools/content_check.py` | New tool (160 statements) |
+| `tests/test_content_check.py` | 56 tests — 100% coverage |
+
+**Entry point added to `pyproject.toml`:**
+```
+meo-content-check = "meo.tools.content_check:main"
+```
+
+**New tests (+56 tests, 1284 → 1340):**
+
+- `TestJapaneseRatio` (11 tests): empty, pure hiragana, katakana, kanji,
+  pure ASCII, mixed, spaces, punctuation, real text, bounds, long vowel
+- `TestOpeningPhrase` (6 tests): kuten stop, exclamation stop, newline stop,
+  fallback truncation, empty, strips whitespace
+- `TestFindRepeatedOpenings` (8 tests): empty, single, unique, repeated,
+  empty-text skip, truncation fallback, different sentences, missing key
+- `TestPostMetrics` (7 tests): normal clean, short, low JP, empty, zero
+  max_chars, missing fields, ratio rounding
+- `TestRunContentCheck` (7 tests): empty history, clean, last_n cap,
+  multiple stores, low JP concern, repeated opening concern, max_post_chars
+- `TestFormatOutput` (9 tests): no posts, full text, checkmark, warning,
+  repeated opening, overall OK, overall warn, last_n header, multiline
+- `TestMain` (8 tests): exit 0 clean, exit 1 concern, store filter, unknown
+  store, JSON valid, last flag, JSON concerns, store name in output
+
+**Coverage: 3289 → 3449 statements (160 new), 0 miss, 100% maintained.**
 
 ---
 
