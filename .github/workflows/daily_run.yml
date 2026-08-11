@@ -106,6 +106,15 @@ jobs:
           fi
           python -m meo.main $ARGS
 
+      # Check AI-generated content quality after the main run has written new
+      # posts to state.json.  Flags low Japanese-character ratio, repeated
+      # opening phrases, and suspiciously short posts.  Non-fatal — exits 1
+      # when concerns are detected but never blocks the state-save or alerts.
+      - name: Content quality check
+        if: always()
+        continue-on-error: true
+        run: python -m meo.tools.content_check --last 3 || true
+
       # Alert immediately when low-star reviews are held for manual reply.
       # This step runs after the main automation so the held-review snapshot in
       # state.json is up-to-date.  Exits 0 when no reviews are waiting (no alert

@@ -1,6 +1,70 @@
 # PROGRESS
 
-## Status: All milestones complete — 1340/1340 tests green (100% coverage)
+## Status: All milestones complete — 1400/1400 tests green (100% coverage)
+
+---
+
+## Completed this run (run 75)
+
+### feat(performance+tools): add `meo-insights` — GBP Performance metrics dashboard
+
+**Gap**: There was no way to see whether the daily posting is actually driving
+traffic.  All existing tools (meo-score, meo-trend, meo-report) read only from
+`state.json` — the tool's own records.  The owner had no visibility into:
+- How many times Google showed the store in Search or Maps
+- Whether website clicks or direction requests are increasing over time
+- Whether the daily posting cadence is correlating with higher impressions
+
+**Fix**: Two additions:
+
+1. **`src/meo/performance.py`** — `PerformanceClient` for the Business Profile
+   Performance API v1:
+   - `fetch_daily_metrics(location_id, start_date, end_date, metrics)` — fetches
+     a time-series of daily counts for the requested metrics.
+   - `_performance_name(location_id)` — converts any location ID format (v4 full
+     path, v1 `locations/{id}`, or bare numeric ID) to the v1 format the
+     Performance API requires.
+   - `_parse_response(data)` — decodes the `multiDailyMetricTimeSeries` response
+     into a clean `{metric: {date_iso: count}}` dict; null/absent values become
+     0 and malformed date entries are skipped.
+   - Uses the same `_AuthSession` and `_raise_for_status` as `business_profile.py`.
+   - **No additional OAuth scope** — `business.manage` (already configured) covers
+     the Performance API.
+
+   Available metrics: map impressions (PC + mobile), search impressions (PC + mobile),
+   direction requests, call clicks, website clicks.
+
+2. **`src/meo/tools/insights.py`** — new `meo-insights` CLI tool:
+   - Fetches the last N days (default 28) split into current half / prior half for
+     a period-over-period comparison per store.
+   - Skips stores where `location_id` is not yet configured.
+   - `--days N`, `--store STORE_KEY`, `--json` flags.
+   - Exit 0: all configured stores fetched; exit 1: any API error.
+
+   **Usage:**
+   ```bash
+   meo-insights                         # all stores, last 28 days
+   meo-insights --days 14              # 7-day vs 7-day comparison
+   meo-insights --store the_body_kyoto
+   meo-insights --json | jq '.[].metrics_cur.WEBSITE_CLICKS'
+   ```
+
+3. **`.github/workflows/daily_run.yml`** — added a `Content quality check` step
+   that runs `meo-content-check --last 3` after the main run (always, non-fatal).
+   Catches AI content regressions automatically in every daily CI run.
+
+**Files added/modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/performance.py` | New module (125 statements) |
+| `src/meo/tools/insights.py` | New tool (162 statements) |
+| `tests/test_performance.py` | 21 tests — 100% coverage |
+| `tests/test_insights.py` | 39 tests — 100% coverage |
+| `pyproject.toml` | Added `meo-insights` entry point |
+| `.github/workflows/daily_run.yml` | Added `Content quality check` step |
+
+**New tests (+60 tests, 1340 → 1400), 100% coverage maintained.**
 
 ---
 
