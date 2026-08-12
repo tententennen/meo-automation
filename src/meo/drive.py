@@ -99,6 +99,21 @@ class DriveClient:
             )
         return random.choice(images)
 
+    def get_image_metadata(self, file_id: str) -> dict[str, Any]:
+        """Return metadata for a specific Drive file by ID.
+
+        Returns a dict with at minimum: id, name, mimeType, webContentLink.
+        Raises googleapiclient.errors.HttpError if the file is not found
+        or the caller lacks read permission.
+
+        Ref: https://developers.google.com/drive/api/v3/reference/files/get
+        """
+        return (
+            self._service.files()
+            .get(fileId=file_id, fields="id, name, mimeType, webContentLink")
+            .execute()
+        )
+
     def download_image(self, file_id: str) -> bytes:
         """Download a Drive file's binary content (authenticated — works for private files).
 

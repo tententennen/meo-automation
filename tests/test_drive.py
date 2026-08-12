@@ -126,3 +126,31 @@ def test_download_image_returns_bytes(client, mock_service):
 
     assert result == fake_bytes
     mock_service.files().get_media.assert_called_once_with(fileId="file_id_123")
+
+
+# ---------------------------------------------------------------------------
+# get_image_metadata
+# ---------------------------------------------------------------------------
+
+def test_get_image_metadata_calls_files_get(client, mock_service):
+    expected = {
+        "id": "file_abc",
+        "name": "photo.jpg",
+        "mimeType": "image/jpeg",
+        "webContentLink": "https://drive.google.com/uc?id=file_abc",
+    }
+    mock_service.files().get.return_value.execute.return_value = expected
+
+    result = client.get_image_metadata("file_abc")
+
+    mock_service.files().get.assert_called_once_with(
+        fileId="file_abc",
+        fields="id, name, mimeType, webContentLink",
+    )
+    assert result == expected
+
+
+def test_get_image_metadata_propagates_http_error(client, mock_service):
+    mock_service.files().get.return_value.execute.side_effect = RuntimeError("404 not found")
+    with pytest.raises(RuntimeError, match="404"):
+        client.get_image_metadata("nonexistent_file")

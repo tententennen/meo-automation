@@ -217,6 +217,18 @@ def test_record_post_content_none_theme_stored_as_empty_string(frozen_today):
     assert history[0]["theme"] == ""
 
 
+def test_record_post_content_manual_flag_stored(frozen_today):
+    state_mod.record_post_content("my_store", "手動投稿", None, manual=True)
+    history = state_mod.get_post_history("my_store")
+    assert history[0]["manual"] is True
+
+
+def test_record_post_content_manual_defaults_to_false(frozen_today):
+    state_mod.record_post_content("my_store", "AI 生成", "テーマ")
+    history = state_mod.get_post_history("my_store")
+    assert history[0]["manual"] is False
+
+
 # ---------------------------------------------------------------------------
 # Reply content archiving tests
 # ---------------------------------------------------------------------------

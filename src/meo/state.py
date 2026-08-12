@@ -211,13 +211,20 @@ def record_post_content(
     text: str,
     theme: str | None,
     post_name: str | None = None,
+    *,
+    manual: bool = False,
 ) -> None:
-    """Archive the generated post text for this store (last _POST_HISTORY_SIZE kept)."""
-    entry: dict[str, str] = {
+    """Archive the generated post text for this store (last _POST_HISTORY_SIZE kept).
+
+    Set manual=True when the post text was supplied by the owner (via meo-post-manual)
+    rather than AI-generated, so history viewers can distinguish the two.
+    """
+    entry: dict[str, Any] = {
         "date": _today().isoformat(),
         "theme": theme or "",
         "text": text,
         "post_name": post_name or "",
+        "manual": manual,
     }
     state = _load()
     history: list[dict] = state.setdefault("post_history", {}).setdefault(store_key, [])

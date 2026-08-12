@@ -1,6 +1,86 @@
 # PROGRESS
 
-## Status: All milestones complete — 1400/1400 tests green (100% coverage)
+## Status: All milestones complete — 1428/1428 tests green (100% coverage)
+
+---
+
+## Completed this run (run 76)
+
+### feat(tools): add `meo-post-manual` — publish a hand-written 最新情報
+
+**Gap**: The only way to publish a post was `meo-run`, which always generates
+AI content.  If the owner wants to post a special announcement — a flash sale,
+holiday-hours notice, new product arrival, or store event — they had to either:
+- Go into Google Business Profile directly (bypassing state tracking), or
+- Edit a prompt in content.yaml (clunky, affects all stores).
+
+**Fix**: Three additions:
+
+1. **`src/meo/tools/post_manual.py`** — `meo-post-manual` CLI tool:
+   - `--store STORE_KEY` (required) — which store to post to.
+   - `--text TEXT` (required) — the post body; owner supplies it directly.
+   - `--photo DRIVE_FILE_ID` (optional) — attach a specific photo from Drive
+     by file ID instead of the random-rotation pick.
+   - `--cta-url URL` + `--cta-type TYPE` (optional) — call-to-action.
+   - `--dry-run` — log what would be posted without any API write.
+   - On success: calls `create_local_post()`, records in `state.json` with
+     `manual=True` so the cadence guard treats today as "already posted" and
+     the scheduled daily run skips the store for the day.
+   - Photo path (when `--photo` given): fetches metadata via new
+     `DriveClient.get_image_metadata()`, downloads bytes, uploads to GBP
+     (`upload_media_bytes()`); falls back to `webContentLink` if GBP upload
+     fails; posts without photo if both fail.
+   - Validates that `location_id` is configured (not a TODO placeholder);
+     exits with code 1 and a clear message if not.
+   - Warns (but does not abort) if text exceeds 1500 chars (GBP limit).
+
+2. **`src/meo/drive.py`** — new `get_image_metadata(file_id)` method:
+   - Calls `files.get(fileId=..., fields="id, name, mimeType, webContentLink")`
+     to fetch metadata for a specific Drive file without listing a folder.
+   - Used by `meo-post-manual` to validate a Drive file ID and determine its
+     MIME type before downloading.
+
+3. **`src/meo/state.py`** — `record_post_content()` gains `manual: bool = False`
+   keyword-only parameter:
+   - Stored in the post history entry as `"manual": true/false`.
+   - Existing AI-generated posts get `"manual": false` (backward-compatible
+     default — callers in `posts.py` unchanged).
+   - `meo-content-check` and `meo-export` display the field so the owner can
+     distinguish AI posts from manual announcements in history.
+
+   **Usage:**
+   ```bash
+   # Special announcement — no AI needed
+   meo-post-manual --store the_body_kyoto --text "今週末限定！トリートメントが20%オフ。"
+
+   # With a specific photo from Drive
+   meo-post-manual --store the_body_osaka_shinsaibashi \
+     --text "新商品入荷のお知らせ" \
+     --photo 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74
+
+   # With a call-to-action button
+   meo-post-manual --store mybear_studio_kyoto \
+     --text "体験レッスン受付中！" \
+     --cta-url "https://example.com/trial" \
+     --cta-type BOOK
+
+   # Verify before posting
+   meo-post-manual --store the_body_kyoto --text "..." --dry-run
+   ```
+
+**Files added/modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/post_manual.py` | New tool (176 statements) |
+| `src/meo/drive.py` | Added `get_image_metadata()` method |
+| `src/meo/state.py` | Added `manual` keyword param to `record_post_content()` |
+| `tests/test_post_manual.py` | 22 tests — 100% coverage |
+| `tests/test_drive.py` | 2 new tests for `get_image_metadata()` |
+| `tests/test_state.py` | 2 new tests for `manual` flag |
+| `pyproject.toml` | Added `meo-post-manual` entry point |
+
+**New tests (+28 tests, 1400 → 1428), 100% coverage maintained.**
 
 ---
 
