@@ -1,6 +1,82 @@
 # PROGRESS
 
-## Status: All milestones complete — 1428/1428 tests green (100% coverage)
+## Status: All milestones complete — 1461/1461 tests green (100% coverage)
+
+---
+
+## Completed this run (run 77)
+
+### feat(tools): add `meo-reply-manual` — post a reply to a held review from the CLI
+
+**Gap**: The held-review workflow had a missing final step. When a review was below
+`min_star_autoreply` (e.g. a 1-star complaint), the daily runner held it for manual
+handling — but "manual" meant going to the GBP UI. The CLI had:
+
+1. `meo-export held-reviews` / `meo-review-alert` → see which reviews need a reply
+2. `meo-held-reply-draft --store X` → generate AI draft suggestions
+3. *(no tool)* → owner had to open GBP, find the review, and paste the reply by hand
+
+**Fix**: New tool `meo-reply-manual` (`src/meo/tools/reply_manual.py`):
+
+1. **`--text TEXT`** — post a hand-written reply supplied directly by the owner.
+
+2. **`--auto`** — generate an AI reply using the held-review snapshot in `state.json`,
+   then post it. The review details (reviewer name, star rating, comment) are read
+   from the state snapshot so no extra GBP API call is needed.
+
+3. **`--dry-run`** — log the reply that would be posted without making any API write.
+   Works with both `--text` and `--auto`.
+
+4. **State updates on success**:
+   - `record_replied_review(store_key, review_id)` — prevents the daily runner from
+     double-replying due to GBP propagation lag.
+   - `record_reply_content(...)` — archives the reply in history for `meo-report` /
+     `meo-export`.
+   - `_remove_from_held(store_key, review_id)` — removes the review from the held
+     snapshot so `meo-export held-reviews` no longer lists it immediately.
+
+5. **Resilient `--text` mode** — if the review is not in the held snapshot (e.g. the
+   owner is replying to a review that was never auto-held, or the snapshot is stale),
+   the tool logs a warning and posts the supplied text anyway. Only `--auto` mode
+   requires the snapshot, because it needs the review text to generate the reply.
+
+6. **Validates `location_id`** is configured before authenticating; exits with code 1
+   and a clear message if not.
+
+**Private helpers** (all tested):
+- `_find_held_review(store_key, review_id)` → lookup in snapshot
+- `_remove_from_held(store_key, review_id)` → filter out and persist
+- `_held_to_gbp_review(held)` → convert snapshot entry to GBP dict for `generate_reply()`
+
+**Completed workflow:**
+```bash
+# Step 1 — see what's held
+meo-export held-reviews
+# or: meo-review-alert (sends Slack alert)
+
+# Step 2 — get AI draft suggestion
+meo-held-reply-draft --store the_body_kyoto
+
+# Step 3a — post a hand-written reply
+meo-reply-manual --store the_body_kyoto --review REVIEW_ID \
+  --text "この度はご不便をおかけし誠に申し訳ございません。..."
+
+# Step 3b — generate and post an AI reply in one step
+meo-reply-manual --store the_body_kyoto --review REVIEW_ID --auto
+
+# Step 3c — preview before posting
+meo-reply-manual --store the_body_kyoto --review REVIEW_ID --auto --dry-run
+```
+
+**Files added/modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/reply_manual.py` | New tool (170 statements) |
+| `tests/test_reply_manual.py` | 33 tests — 100% coverage |
+| `pyproject.toml` | Added `meo-reply-manual` entry point |
+
+**New tests (+33 tests, 1428 → 1461), 100% coverage maintained.**
 
 ---
 
