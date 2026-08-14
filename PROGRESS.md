@@ -1,6 +1,82 @@
 # PROGRESS
 
-## Status: All milestones complete — 1461/1461 tests green (100% coverage)
+## Status: All milestones complete — 1496/1496 tests green (100% coverage)
+
+---
+
+## Completed this run (run 78)
+
+### feat(tools): add `meo-offer` — create GBP OFFER-type 時限キャンペーン posts
+
+**Gap**: The tool only supported `STANDARD` (最新情報) posts.  GBP has a
+distinct **OFFER** post type for time-limited promotions — seasonal discounts,
+new-customer campaigns, anniversary deals — which appears as a dedicated "Offer"
+card on the business listing, separate from 最新情報 posts.  There was no way to
+create these from the CLI.
+
+**Fix**: Two additions:
+
+1. **`src/meo/business_profile.py`** — new `create_offer_post()` method:
+   - `topicType: "OFFER"` — puts the post in the Offer slot on GBP.
+   - `event.title` + `event.schedule.startDate` / `endDate` — required offer
+     fields; dates use the GBP `Date` object format
+     `{"year": int, "month": int, "day": int}`.
+   - `offer.couponCode`, `offer.redeemOnlineUrl`, `offer.termsConditions` —
+     optional offer details; only included in the request body when non-None
+     so the body stays clean for simple offers.
+   - Supports `media_url` (photo) and `callToAction` like `create_local_post`.
+
+2. **`src/meo/tools/offer.py`** — new `meo-offer` CLI tool:
+   - Owner supplies all content (title, text, dates, coupon, etc.) — no AI
+     generation, because promo details are specific and time-sensitive.
+   - `_parse_date(date_str)` — converts `"YYYY-MM-DD"` → GBP Date object;
+     raises `ValueError` with a clear message on invalid input.
+   - Photo flow matches `meo-post-manual`: fetch Drive metadata → download bytes
+     → upload to GBP → attach hosted URL; falls back to `webContentLink` if GBP
+     upload fails; posts without photo if both fail.
+   - Warns (but does not abort) if title exceeds 58 chars or text exceeds 1500
+     chars.
+   - Records in `state.json` via `record_post()` + `record_post_content()`
+     (with `manual=True`) so the daily cadence guard treats today as "already
+     posted" and skips the store.
+   - `--dry-run` mode: logs intent, fetches Drive photo metadata if `--photo`
+     supplied, but makes no API writes and does not update state.
+
+**Usage:**
+
+```bash
+# Summer discount campaign with coupon
+meo-offer --store the_body_kyoto \
+          --title "夏の特別キャンペーン" \
+          --text "今月限定！全メニュー20%オフです。ぜひご来店ください。" \
+          --start 2024-08-01 --end 2024-08-31 \
+          --coupon SUMMER20
+
+# Fitness trial lesson — no coupon, with CTA
+meo-offer --store mybear_studio_kyoto \
+          --title "体験レッスン無料キャンペーン" \
+          --text "はじめての方は体験レッスンが無料！お気軽にご参加ください。" \
+          --start 2024-09-01 --end 2024-09-30 \
+          --cta-url "https://example.com/trial" --cta-type BOOK
+
+# Preview without posting
+meo-offer --store the_body_osaka_shinsaibashi \
+          --title "秋の新メニュー割引" \
+          --text "秋の限定メニューが10%オフ！" \
+          --start 2024-10-01 --end 2024-10-31 \
+          --dry-run
+```
+
+**Files added/modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/business_profile.py` | Added `create_offer_post()` method |
+| `src/meo/tools/offer.py` | New tool (163 statements) |
+| `tests/test_offer.py` | 35 tests — 100% coverage |
+| `pyproject.toml` | Added `meo-offer` entry point |
+
+**New tests (+35 tests, 1461 → 1496), 100% coverage maintained.**
 
 ---
 
