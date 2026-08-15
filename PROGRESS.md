@@ -1,6 +1,80 @@
 # PROGRESS
 
-## Status: All milestones complete — 1496/1496 tests green (100% coverage)
+## Status: All milestones complete — 1545/1545 tests green (100% coverage)
+
+---
+
+## Completed this run (run 79)
+
+### feat(tools): add `meo-event` — create GBP EVENT-type イベント posts
+
+**Gap**: The tool covered `STANDARD` (最新情報) and `OFFER` (時限キャンペーン) posts
+but not the third GBP post type: **EVENT**.  EVENT posts have their own card on
+the business listing and support a start+end date *and* time — essential for
+a fitness studio announcing special classes, workshops, or guest instructors.
+
+**Fix**: Two additions:
+
+1. **`src/meo/business_profile.py`** — new `create_event_post()` method:
+   - `topicType: "EVENT"` — puts the post in the Event slot on GBP.
+   - `event.title` — required event name.
+   - `event.schedule` — optional block with `startDate`, `endDate`, `startTime`,
+     `endTime` (GBP `Date` + `TimeOfDay` objects).  Any combination of the four
+     fields is valid; the schedule block is omitted entirely when none are given.
+   - Supports `media_url` (photo) and `callToAction` like the other post types.
+   - No `offer` block — that field is OFFER-only.
+
+2. **`src/meo/tools/event.py`** — new `meo-event` CLI tool:
+   - `_parse_date(date_str)` — converts `"YYYY-MM-DD"` → GBP Date object.
+   - `_parse_time(time_str)` — converts `"HH:MM"` (24-hour) → GBP TimeOfDay
+     object `{"hours": int, "minutes": int}`.
+   - Both parsers raise `ValueError` with a clear message on invalid input, and
+     validation runs before any API call.
+   - Default CTA type is `BOOK` (more natural for event RSVPs than `LEARN_MORE`).
+   - Photo flow matches `meo-offer`: fetch Drive metadata → download bytes →
+     upload to GBP → attach hosted URL; falls back to `webContentLink`; posts
+     without photo if both fail.
+   - Records in `state.json` via `record_post()` + `record_post_content()`
+     (with `manual=True`) so the daily cadence guard treats today as "already posted".
+   - `--dry-run` mode: logs intent, fetches Drive photo metadata if `--photo`
+     supplied, but makes no API writes and does not update state.
+
+**Usage:**
+
+```bash
+# Single-day class with start/end time
+meo-event --store mybear_studio_kyoto \
+          --title "特別ヨガクラス" \
+          --text "ゲストインストラクターによる特別クラスを開催します！" \
+          --start 2024-10-05 --end 2024-10-05 \
+          --start-time 10:00 --end-time 12:00 \
+          --cta-url "https://example.com/book" --cta-type BOOK
+
+# Multi-day anniversary event with photo
+meo-event --store the_body_kyoto \
+          --title "開店5周年記念イベント" \
+          --text "5周年を記念して特別なメニューをご用意しています。" \
+          --start 2024-11-01 --end 2024-11-30 \
+          --photo DRIVE_FILE_ID
+
+# Preview without posting
+meo-event --store the_body_osaka_shinsaibashi \
+          --title "秋の体験フェア" \
+          --text "新メニューの無料体験を実施中！" \
+          --start 2024-10-12 --end 2024-10-13 \
+          --dry-run
+```
+
+**Files added/modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/business_profile.py` | Added `create_event_post()` method |
+| `src/meo/tools/event.py` | New tool |
+| `tests/test_event.py` | 49 tests — 100% coverage |
+| `pyproject.toml` | Added `meo-event` entry point |
+
+**New tests (+49 tests, 1496 → 1545), 100% coverage maintained.**
 
 ---
 
