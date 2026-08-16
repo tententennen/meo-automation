@@ -1,6 +1,91 @@
 # PROGRESS
 
-## Status: All milestones complete — 1545/1545 tests green (100% coverage)
+## Status: All milestones complete — 1593/1593 tests green (100% coverage)
+
+---
+
+## Completed this run (run 80)
+
+### feat(tools): add `meo-delete-post` — delete a specific GBP local post
+
+**Gap**: There was no way to remove a live GBP post via the CLI.  This matters
+in several practical scenarios: cleaning up test or draft posts published during
+setup, removing stale seasonal content before it expires naturally, and deleting
+rejected posts without logging into the GBP dashboard.
+
+**Fix**: Three additions:
+
+1. **`src/meo/business_profile.py`** — two new methods + one new `_AuthSession` verb:
+
+   - `_AuthSession.delete()` — injects Bearer auth and the default timeout on
+     every `DELETE` request, matching the existing `get()`/`post()`/`put()`
+     pattern.  Because `DELETE` is not in `Retry.allowed_methods`, the urllib3
+     retry adapter leaves it alone (deleting an already-deleted post would 404
+     on retry, which would be confusing).
+
+   - `BusinessProfileClient.get_local_post(post_name)` — fetches a single local
+     post by its full resource name (`GET /v4/{name}`).  Used by the delete tool
+     to show a preview before prompting for confirmation.
+
+   - `BusinessProfileClient.delete_local_post(post_name)` — deletes the post
+     (`DELETE /v4/{name}`).  Raises `requests.HTTPError` on API errors (e.g. 404
+     post not found, 403 insufficient permissions).
+
+2. **`src/meo/tools/delete_post.py`** — new `meo-delete-post` CLI tool:
+
+   - `_validate_post_name()` — checks that the name contains `/localPosts/`
+     before touching any credentials; exits 1 with a clear message if not.
+   - `--dry-run` — validates the name and logs intent; exits 0 without
+     contacting the API.
+   - `--yes` / `-y` — skip interactive confirmation (required in CI / scheduled
+     runs where stdin is not a terminal).
+   - Without `--yes`: fetches the post for a preview (name, type, state,
+     created time, first 120 chars of text), then prompts for `y/N`.
+     If stdin is non-interactive (EOFError), exits 1 with a hint to use `--yes`.
+   - On preview-fetch failure (e.g. post already expired): falls back to
+     showing just the raw resource name and still prompts — never aborts.
+   - State note: deletion does NOT update `state.json`; the next `meo-live-posts`
+     run reconciles the archive automatically.
+
+3. **`tests/test_delete_post.py`** — 48 new tests (100% coverage on the new
+   module):
+   - `_validate_post_name`: valid, missing segment, wrong resource type, empty
+   - `_parse_create_time`: UTC/Z, offset, invalid, empty
+   - `_format_post_preview`: name, state, type, summary, truncation, missing fields
+   - `run_delete_post`: dry_run, live success, invalid name, 404, 403
+   - `_prompt_confirm`: y, yes, uppercase, n, empty, EOFError
+   - `main()`: all paths — dry_run, --yes, --yes+API error, auth error,
+     confirm-yes, confirm-no, EOFError non-interactive, preview-fetch failure,
+     preview display
+   - `BusinessProfileClient.get_local_post` / `.delete_local_post`: correct URL,
+     success, 404 error
+
+**Usage:**
+
+```bash
+# Find post names first
+meo-live-posts --store the_body_kyoto
+
+# Preview without deleting
+meo-delete-post --post-name accounts/123/locations/456/localPosts/789 --dry-run
+
+# Delete after interactive confirmation (shows post text + state)
+meo-delete-post --post-name accounts/123/locations/456/localPosts/789
+
+# Delete without confirmation (CI / scheduled use)
+meo-delete-post --post-name accounts/123/locations/456/localPosts/789 --yes
+```
+
+**Files added/modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/business_profile.py` | Added `_AuthSession.delete()`, `get_local_post()`, `delete_local_post()` |
+| `src/meo/tools/delete_post.py` | New tool |
+| `tests/test_delete_post.py` | 48 tests — 100% coverage |
+| `pyproject.toml` | Added `meo-delete-post` entry point |
+
+**New tests (+48 tests, 1545 → 1593), 100% coverage maintained.**
 
 ---
 

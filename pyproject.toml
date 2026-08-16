@@ -59,6 +59,7 @@ meo-post-manual = "meo.tools.post_manual:main"
 meo-reply-manual = "meo.tools.reply_manual:main"
 meo-offer = "meo.tools.offer:main"
 meo-event = "meo.tools.event:main"
+meo-delete-post = "meo.tools.delete_post:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

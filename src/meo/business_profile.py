@@ -179,6 +179,49 @@ class BusinessProfileClient:
         logger.info("Uploaded media to GBP for %s: %s", location_id, google_url)
         return google_url
 
+    def get_local_post(self, post_name: str) -> dict[str, Any]:
+        """Fetch a single local post by its full resource name.
+
+        Args:
+            post_name: Full resource name, e.g.
+                       "accounts/123/locations/456/localPosts/789".
+
+        Returns:
+            The LocalPost resource dict (fields: name, summary, state,
+            createTime, updateTime, topicType, …).
+
+        Raises:
+            requests.HTTPError: 404 if the post does not exist or has expired.
+
+        Ref: https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/get
+        """
+        url = f"https://mybusiness.googleapis.com/v4/{post_name}"
+        resp = self._session.get(url)
+        _raise_for_status(resp)
+        return resp.json()
+
+    def delete_local_post(self, post_name: str) -> None:
+        """Delete a local post by its full resource name.
+
+        Once deleted, the post is immediately removed from the GBP listing.
+        This action is irreversible — there is no trash / undo in the GBP API.
+
+        Args:
+            post_name: Full resource name, e.g.
+                       "accounts/123/locations/456/localPosts/789".
+                       Obtain names via list_local_posts() or meo-live-posts.
+
+        Raises:
+            requests.HTTPError: If the API returns an error (e.g. 404 post
+                not found / already deleted, 403 insufficient permissions).
+
+        Ref: https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/delete
+        """
+        url = f"https://mybusiness.googleapis.com/v4/{post_name}"
+        resp = self._session.delete(url)
+        _raise_for_status(resp)
+        logger.info("Deleted local post: %s", post_name)
+
     def list_local_posts(
         self, location_id: str, page_size: int = 20
     ) -> list[dict[str, Any]]:
@@ -462,3 +505,8 @@ class _AuthSession:
         extra = kwargs.pop("headers", None)
         kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
         return self._session.put(url, headers=self._auth_headers(extra), **kwargs)
+
+    def delete(self, url: str, **kwargs: Any) -> requests.Response:
+        extra = kwargs.pop("headers", None)
+        kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
+        return self._session.delete(url, headers=self._auth_headers(extra), **kwargs)
