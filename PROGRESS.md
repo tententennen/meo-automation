@@ -1,6 +1,95 @@
 # PROGRESS
 
-## Status: All milestones complete — 1593/1593 tests green (100% coverage)
+## Status: All milestones complete — 1642/1642 tests green (100% coverage)
+
+---
+
+## Completed this run (run 81)
+
+### feat(tools): add `meo-update-post` — patch the text or CTA of a live GBP local post
+
+**Gap**: The CRUD cycle for GBP local posts was incomplete — there was no way to
+edit a published post without deleting and recreating it.  Correcting a typo,
+updating a promotion URL, or adding a call-to-action button to an existing post
+required manually opening the GBP dashboard.
+
+**Fix**: Three additions that complete the Create / Read / **Update** / Delete
+cycle for `accounts.locations.localPosts`:
+
+1. **`src/meo/business_profile.py`** — two additions:
+
+   - `_AuthSession.patch()` — injects Bearer auth and the default timeout on
+     every `PATCH` request, matching the existing `get()`/`post()`/`put()`/`delete()`
+     pattern.
+
+   - `BusinessProfileClient.update_local_post(post_name, *, summary, cta_action, cta_url)` —
+     sends `PATCH /v4/{name}?updateMask=<fields>` with only the fields that were
+     supplied, so callers never risk accidentally blanking untouched post fields.
+     Builds the `updateMask` automatically from whichever arguments are not `None`.
+     Raises `ValueError` when called with no fields to update (prevents a no-op
+     PATCH that would still consume an API quota slot).
+
+2. **`src/meo/tools/update_post.py`** — new `meo-update-post` CLI tool:
+
+   - `--summary TEXT` — replace the post body entirely.
+   - `--cta-action ACTION` — set the button type (BOOK / ORDER / SHOP /
+     LEARN_MORE / SIGN_UP / GET_OFFER / CALL); validated before any API call.
+   - `--cta-url URL` — set the button destination URL.  `--cta-action` and
+     `--cta-url` may be used independently (e.g. update URL only) or together.
+   - `--dry-run` — print a preview of what would change and exit 0 without
+     touching any credentials.  Unlike `meo-delete-post`, no `--yes` flag is
+     needed because editing a post is reversible.
+   - Validates the post name format and CTA action before authenticating, so
+     typos fail fast with a clear error rather than a credential prompt followed
+     by a 400 from the API.
+
+3. **`tests/test_update_post.py`** — 49 new tests (100% coverage on the new module):
+   - `_validate_post_name`: valid, missing segment, wrong resource type, empty
+   - `_validate_cta_action`: all 7 valid types, case-insensitive accept, invalid, empty
+   - `_parse_update_time`: UTC/Z, offset, invalid, empty
+   - `_format_update_preview`: summary-only, CTA-only, all fields, long text truncation
+   - `_format_result`: full post, missing fields, no CTA, long summary truncation
+   - `run_update_post`: dry-run (summary / CTA / both), live summary, live CTA,
+     invalid name, no fields, invalid CTA action, 403 error, 404 error
+   - `BusinessProfileClient.update_local_post`: summary, CTA, no-fields ValueError,
+     HTTP error propagation
+   - `_AuthSession.patch`: Bearer token injection
+   - `main()`: no args, missing post-name, no fields, invalid name, invalid CTA action,
+     dry-run summary/CTA/action, auth failure, live success, live API error, all fields
+
+**Usage:**
+
+```bash
+# Find post names first
+meo-live-posts --store the_body_kyoto
+
+# Correct a typo in the post body
+meo-update-post --post-name accounts/123/locations/456/localPosts/789 \
+                --summary "新しい本文テキスト"
+
+# Update (or add) a CTA button
+meo-update-post --post-name accounts/123/locations/456/localPosts/789 \
+                --cta-action BOOK --cta-url "https://example.com/booking"
+
+# Update both at once
+meo-update-post --post-name accounts/123/locations/456/localPosts/789 \
+                --summary "更新テキスト" --cta-url "https://example.com/booking"
+
+# Preview without making any API calls
+meo-update-post --post-name accounts/123/locations/456/localPosts/789 \
+                --summary "新しいテキスト" --dry-run
+```
+
+**Files added/modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/business_profile.py` | Added `_AuthSession.patch()`, `update_local_post()` |
+| `src/meo/tools/update_post.py` | New tool |
+| `tests/test_update_post.py` | 49 tests — 100% coverage |
+| `pyproject.toml` | Added `meo-update-post` entry point |
+
+**New tests (+49 tests, 1593 → 1642), 100% coverage maintained.**
 
 ---
 

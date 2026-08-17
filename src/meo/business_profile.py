@@ -222,6 +222,69 @@ class BusinessProfileClient:
         _raise_for_status(resp)
         logger.info("Deleted local post: %s", post_name)
 
+    def update_local_post(
+        self,
+        post_name: str,
+        *,
+        summary: str | None = None,
+        cta_action: str | None = None,
+        cta_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Patch a live local post's text and/or call-to-action.
+
+        Only the fields named in ``updateMask`` are changed; omitted fields
+        are left untouched.  At least one of ``summary`` or ``cta_url``
+        (or ``cta_action``) must be supplied.
+
+        Args:
+            post_name:  Full resource name, e.g.
+                        "accounts/123/locations/456/localPosts/789".
+            summary:    New post body text (replaces the existing summary).
+            cta_action: CTA button type: BOOK, ORDER, SHOP, LEARN_MORE,
+                        SIGN_UP, GET_OFFER, CALL.  Must be supplied together
+                        with cta_url unless the post already has a CTA.
+            cta_url:    New destination URL for the CTA button.
+
+        Returns:
+            The updated LocalPost resource as returned by the API.
+
+        Raises:
+            ValueError:          If no fields to update are supplied.
+            requests.HTTPError:  On API error (404, 403, 400, …).
+
+        Ref: https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/patch
+        """
+        body: dict[str, Any] = {}
+        mask_fields: list[str] = []
+
+        if summary is not None:
+            body["summary"] = summary
+            mask_fields.append("summary")
+
+        if cta_action is not None or cta_url is not None:
+            cta: dict[str, Any] = {}
+            if cta_action is not None:
+                cta["actionType"] = cta_action
+            if cta_url is not None:
+                cta["url"] = cta_url
+            body["callToAction"] = cta
+            mask_fields.append("callToAction")
+
+        if not mask_fields:
+            raise ValueError(
+                "At least one field must be updated: supply --summary and/or --cta-url."
+            )
+
+        url = f"https://mybusiness.googleapis.com/v4/{post_name}"
+        params = {"updateMask": ",".join(mask_fields)}
+        resp = self._session.patch(url, params=params, json=body)
+        _raise_for_status(resp)
+        updated = resp.json()
+        logger.info(
+            "Updated local post %s (mask: %s)", post_name, ",".join(mask_fields)
+        )
+        return updated
+
     def list_local_posts(
         self, location_id: str, page_size: int = 20
     ) -> list[dict[str, Any]]:
@@ -505,6 +568,11 @@ class _AuthSession:
         extra = kwargs.pop("headers", None)
         kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
         return self._session.put(url, headers=self._auth_headers(extra), **kwargs)
+
+    def patch(self, url: str, **kwargs: Any) -> requests.Response:
+        extra = kwargs.pop("headers", None)
+        kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
+        return self._session.patch(url, headers=self._auth_headers(extra), **kwargs)
 
     def delete(self, url: str, **kwargs: Any) -> requests.Response:
         extra = kwargs.pop("headers", None)
