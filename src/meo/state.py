@@ -6,6 +6,7 @@ State is stored in logs/state.json as a simple JSON object:
     "recent_images":      {"the_body_kyoto": ["file_id_1", "file_id_2"], ...},
     "recent_themes":      {"the_body_kyoto": ["季節のお手入れ情報", ...], ...},
     "replied_reviews":    {"the_body_kyoto": ["rev001", "rev002", ...], ...},
+    "answered_questions": {"the_body_kyoto": ["q001", "q002", ...], ...},
     "held_reviews":       {"the_body_kyoto": [{"date": "2024-01-15", ...}, ...], ...},
     "dismissed_reviews":  {"the_body_kyoto": ["rev003", ...], ...},
     "run_results":        {"the_body_kyoto": {
@@ -52,9 +53,11 @@ _JST = ZoneInfo("Asia/Tokyo")
 # GBP propagation lag guard: cap at 500 IDs per store (~5 KB in state.json).
 _REPLIED_REVIEW_CAPACITY = 500
 
-_POST_HISTORY_SIZE = 30   # max archived post entries per store
-_REPLY_HISTORY_SIZE = 50  # max archived reply entries per store
-_SCORE_HISTORY_SIZE = 60  # max daily score snapshots (approx 2 months)
+_POST_HISTORY_SIZE = 30    # max archived post entries per store
+_REPLY_HISTORY_SIZE = 50   # max archived reply entries per store
+_SCORE_HISTORY_SIZE = 60   # max daily score snapshots (approx 2 months)
+_ANSWERED_QUESTION_CAPACITY = 500  # GBP Q&A propagation lag guard
+_ANSWER_HISTORY_SIZE = 50  # max archived Q&A answer entries per store
 
 
 def _today() -> date:
@@ -265,6 +268,52 @@ def record_reply_content(
 def get_reply_history(store_key: str) -> list[dict]:
     """Return the archived reply history for store_key (most recent first)."""
     return list(_load().get("reply_history", {}).get(store_key, []))
+
+
+# ---------------------------------------------------------------------------
+# Q&A answer tracking — prevent double-answers on GBP propagation delay
+# ---------------------------------------------------------------------------
+
+def record_answered_question(store_key: str, question_id: str) -> None:
+    """Record that an answer was successfully posted for question_id.
+
+    Mirrors record_replied_review() — an answer POSTed via the Q&A API can take
+    several minutes to appear in list_questions().  Tracking answered IDs locally
+    prevents the next run from re-answering the same question while GBP propagates.
+    """
+    _record_rotation("answered_questions", store_key, question_id, _ANSWERED_QUESTION_CAPACITY)
+    logger.debug("Recorded answered question for %s: %s", store_key, question_id)
+
+
+def get_answered_questions(store_key: str) -> list[str]:
+    """Return Q&A question IDs answered locally for store_key (most recent first)."""
+    return list(_load().get("answered_questions", {}).get(store_key, []))
+
+
+def record_answer_content(
+    store_key: str,
+    question_id: str,
+    question_text: str,
+    answer_text: str,
+) -> None:
+    """Archive a generated Q&A answer for this store (last _ANSWER_HISTORY_SIZE kept)."""
+    entry: dict[str, str] = {
+        "date": _today().isoformat(),
+        "question_id": question_id,
+        "question": question_text,
+        "answer": answer_text,
+    }
+    state = _load()
+    history: list[dict] = state.setdefault("answer_history", {}).setdefault(store_key, [])
+    history.insert(0, entry)
+    state["answer_history"][store_key] = history[:_ANSWER_HISTORY_SIZE]
+    _save(state)
+    logger.debug("Archived answer content for %s (question %s)", store_key, question_id)
+
+
+def get_answer_history(store_key: str) -> list[dict]:
+    """Return the archived Q&A answer history for store_key (most recent first)."""
+    return list(_load().get("answer_history", {}).get(store_key, []))
 
 
 # ---------------------------------------------------------------------------

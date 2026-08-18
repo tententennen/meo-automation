@@ -1,6 +1,123 @@
 # PROGRESS
 
-## Status: All milestones complete — 1642/1642 tests green (100% coverage)
+## Status: All milestones complete — 1697/1697 tests green (100% coverage)
+
+---
+
+## Completed this run (run 82)
+
+### feat(qa): add Q&A (Questions & Answers) auto-answer feature
+
+**Gap**: Google Business Profile has a Q&A section where customers can ask
+questions publicly. All other GBP automation was covered (posts, review replies,
+analytics, alerts), but Q&A — a separate API at `mybusinessqanda.googleapis.com`
+— had zero support. Unanswered questions on GBP look neglected and hurt the
+store's credibility.
+
+**Fix**: Full Q&A pipeline that mirrors the review-reply workflow:
+
+1. **`src/meo/business_profile.py`** — two new `BusinessProfileClient` methods:
+
+   - `list_questions(location_id, *, page_size, answers_per_question)` — GETs
+     `mybusinessqanda.googleapis.com/v1/locations/{id}/questions` with automatic
+     pagination. Returns all questions including their `topAnswers` so the caller
+     can detect whether the owner has already answered without a second fetch.
+
+   - `upsert_answer(question_name, answer_text)` — POSTs
+     `{question_name}:upsertAnswer`. Creates a new answer if none exists, or
+     replaces the owner's existing answer if one was already posted. Idempotent —
+     safe to call again after a network failure.
+
+   Also adds `_qa_location_name()` helper that extracts `locations/{id}` from the
+   full `accounts/{a}/locations/{id}` path; the Q&A API uses the short form.
+
+2. **`src/meo/qa.py`** — new automation module (mirrors `reviews.py`):
+
+   - `run_qa_for_store(store, gbp, *, dry_run)` — fetches all questions, filters
+     to unanswered ones, applies propagation-lag guard, age filter
+     (`max_question_age_days`, default 180 days), and per-run cap
+     (`max_qa_per_run`, default 10). For each remaining question: generates an
+     AI answer via `generate_answer()`, posts it via `upsert_answer()`, and
+     records the question ID locally to prevent double-answering.
+
+   - `_has_owner_answer()` — detects answered questions by looking for
+     `author.type == "MERCHANT"` in `topAnswers`. A question with
+     `totalAnswerCount == 0` is definitively unanswered.
+
+   - `_extract_question_id()` / `_question_age_days()` — parallel helpers to the
+     review equivalents.
+
+3. **`src/meo/content.py`** — new `generate_answer(question_text, store)`:
+
+   - LLM prompt instructs the model to answer as the store owner, stay within
+     `max_answer_chars` (default 1000), be honest about uncertainty (price,
+     availability), and naturally point to the booking page. Uses the same
+     `_call_llm()` abstraction as `generate_post()` / `generate_reply()`, so
+     provider swaps (Anthropic ↔ OpenAI) work automatically.
+
+4. **`src/meo/state.py`** — four new state functions:
+
+   - `record_answered_question` / `get_answered_questions` — propagation-lag
+     guard (capped at 500 IDs, same as `replied_reviews`).
+   - `record_answer_content` / `get_answer_history` — archives answered Q&As
+     (last 50 per store) for audit and variety tracking.
+
+5. **`src/meo/tools/qa.py`** — new `meo-qa` CLI tool:
+
+   - Default mode: auto-answer unanswered questions across all (or `--store`)
+     stores, with `--dry-run` to preview without posting.
+   - `--list-only`: authenticate and list all questions with answered/unanswered
+     status per store — no LLM calls, no writes. Useful for auditing Q&A health
+     before enabling automation.
+
+6. **`src/meo/main.py`** — Q&A wired into the unattended daily runner:
+   - Runs after review replies as a third per-store step.
+   - `--skip-qa` flag lets the operator bypass Q&A if needed (e.g. running posts
+     only after a failed nightly run).
+   - Per-store error isolation: a Q&A failure does not block posts or reviews for
+     the same store, and does not affect the other stores.
+
+7. **`config/content.yaml`** — three new keys under `defaults`:
+   - `max_answer_chars: 1000` — answer character limit.
+   - `max_qa_per_run: 10` — per-store cap on answers per daily run.
+   - `max_question_age_days: 180` — skip questions older than this.
+   All three support per-store override via `stores.yaml → overrides:`.
+
+**Usage:**
+
+```bash
+# List all Q&A questions (no LLM, no writes)
+meo-qa --list-only
+meo-qa --list-only --store the_body_kyoto
+
+# Auto-answer all unanswered questions (preview)
+meo-qa --dry-run
+meo-qa --dry-run --store mybear_studio_kyoto
+
+# Auto-answer live (all stores)
+meo-qa
+
+# Daily runner now includes Q&A automatically
+meo-run
+meo-run --skip-qa          # posts + reviews only
+meo-run --skip-posts --skip-reviews   # Q&A only
+```
+
+**Files added/modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/business_profile.py` | Added `_qa_location_name()`, `list_questions()`, `upsert_answer()` |
+| `src/meo/qa.py` | New module |
+| `src/meo/content.py` | Added `generate_answer()` |
+| `src/meo/state.py` | Added Q&A answer tracking (4 functions + 2 constants) |
+| `src/meo/tools/qa.py` | New `meo-qa` CLI tool |
+| `src/meo/main.py` | Wired Q&A into unattended runner, added `--skip-qa` |
+| `config/content.yaml` | Added `max_answer_chars`, `max_qa_per_run`, `max_question_age_days` |
+| `pyproject.toml` | Added `meo-qa` entry point |
+| `tests/test_qa.py` | 55 new tests — 100% coverage on all new code |
+
+**New tests (+55 tests, 1642 → 1697), 100% coverage maintained.**
 
 ---
 

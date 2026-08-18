@@ -279,6 +279,62 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     return text
 
 
+def generate_answer(question_text: str, store: dict[str, Any]) -> str:
+    """Generate a Japanese owner answer to a customer Q&A question on GBP.
+
+    Args:
+        question_text: The customer's question text from the GBP Q&A section.
+        store:         A store dict from config.store_list().
+
+    Returns:
+        Answer text string (Japanese, within max_answer_chars from content.yaml).
+    """
+    conf = cfg.content()
+    industry = store.get("industry", "beauty_salon")
+    tone_profile = conf["industry_tones"].get(industry, conf["industry_tones"]["beauty_salon"])
+    banned_words_list = conf.get("banned_words", [])
+    store_defaults = cfg.effective_defaults(store)
+    max_chars: int = store_defaults.get("max_answer_chars", 1000)
+
+    date_context = _jst_date_context()
+    banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
+
+    system = (
+        f"あなたは{store['name']}のオーナーとして、Googleビジネスプロフィールの"
+        f"「よくある質問（Q&A）」に誠実かつ丁寧に回答するオーナーです。"
+        f"ブランドのトーン（{tone_profile['tone']}）を守り、"
+        f"日本語でお客様の疑問に正確でわかりやすく答えます。"
+        f"回答文のみを出力し、説明文や前置きは一切含めないでください。"
+    )
+
+    user = (
+        f"現在の日付・季節: {date_context}\n"
+        f"{banned_line}"
+        f"お客様からの質問: {question_text}\n"
+        f"条件:\n"
+        f"- 日本語で書く\n"
+        f"- {max_chars}文字以内\n"
+        f"- 質問に正直かつ役立つ情報で答える\n"
+        f"- 不確かな情報（価格・在庫・予約枠など）はその旨を伝え、お問い合わせを促す\n"
+        f"- 誠実でフレンドリーなトーンで\n"
+        f"- 公式予約ページや問い合わせ先への誘導は自然に含めてよい\n"
+        f"回答文のみを出力してください（説明文不要）。"
+    )
+
+    text = _call_llm(user, conf["llm"], system=system)
+    text = text.strip()
+    if len(text) > max_chars:
+        text = text[:max_chars]
+    found = _check_banned_words(text, banned_words_list)
+    if found:
+        logger.warning(
+            "[%s] Generated Q&A answer contains banned word(s): %s. "
+            "Adjust config/content.yaml banned_words if this recurs.",
+            store.get("key", "?"), found,
+        )
+    return text
+
+
 # ---------------------------------------------------------------------------
 # LLM abstraction — swap provider here
 # ---------------------------------------------------------------------------

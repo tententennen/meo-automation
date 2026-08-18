@@ -38,6 +38,7 @@ from .business_profile import BusinessProfileClient
 from .drive import DriveClient
 from .notify import send_run_summary
 from .posts import run_post_for_store
+from .qa import run_qa_for_store
 from .reviews import run_reviews_for_store
 from .state import record_run_result
 from .validator import validate_all
@@ -74,6 +75,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Log actions without making API writes.")
     parser.add_argument("--skip-posts", action="store_true", help="Skip local post creation.")
     parser.add_argument("--skip-reviews", action="store_true", help="Skip review reply posting.")
+    parser.add_argument("--skip-qa", action="store_true", help="Skip Q&A question answering.")
     parser.add_argument(
         "--force",
         action="store_true",
@@ -174,6 +176,18 @@ def main() -> None:
             except Exception as exc:
                 logger.error("[%s] Reviews failed: %s", store_key, exc, exc_info=True)
                 store_results["reviews"] = {"error": str(exc)}
+                had_error = True
+
+        # --- Q&A answers ---
+        if not args.skip_qa:
+            try:
+                qa_result = run_qa_for_store(store, gbp, dry_run=args.dry_run)
+                store_results["qa"] = qa_result
+                if qa_result.get("errors"):
+                    had_error = True
+            except Exception as exc:
+                logger.error("[%s] Q&A failed: %s", store_key, exc, exc_info=True)
+                store_results["qa"] = {"error": str(exc)}
                 had_error = True
 
         # Record run result for consecutive-failure alerting (live runs only).

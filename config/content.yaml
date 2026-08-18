@@ -12,6 +12,9 @@ defaults:
   recent_post_context_count: 3        # number of recent post snippets injected into the LLM prompt to encourage content variety (0 = disable)
   recent_reply_context_count: 3       # number of recent reply snippets injected into the reply LLM prompt to encourage reply variety (0 = disable)
   post_time_window_jst: "06:00-23:00" # only post within this JST time range (HH:MM-HH:MM); omit or leave blank to post at any hour; --force bypasses this guard
+  max_answer_chars: 1000            # max characters for AI-generated Q&A owner answers
+  max_qa_per_run: 10                # cap on Q&A answers posted per store per run
+  max_question_age_days: 180        # skip unanswered questions older than this many days (0 = no limit)
 
 # Industry-specific tone profiles (used in the LLM prompt)
 industry_tones:
