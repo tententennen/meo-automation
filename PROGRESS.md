@@ -4,6 +4,42 @@
 
 ---
 
+## Completed this run (run 83)
+
+### refactor(llm): extract LLM abstraction from `content.py` into `src/meo/llm.py`
+
+**Problem**: `content.py` had grown to 486 lines — 21% over the 400-line module cap.
+The overage came from the LLM call abstraction section (149 lines):
+`_call_with_retry`, `_call_llm`, `_call_anthropic`, `_call_openai`.
+These four functions are logically independent of the content-generation prompts
+and are reusable by any future module that needs to call the LLM (e.g. a new
+summarisation or translation feature).
+
+**Fix**: Extracted the LLM layer into a dedicated module `src/meo/llm.py` (165 lines).
+`content.py` imports and re-exports these names so all existing call sites —
+including the 25+ test patches of `meo.content._call_llm` — continue to work
+without modification.
+
+```python
+# content.py now just imports from the new module
+from .llm import _call_llm, _call_anthropic, _call_openai, _call_with_retry
+```
+
+Seven test patches for the `time.sleep` call inside `_call_with_retry` were
+updated from `meo.content.time.sleep` → `meo.llm.time.sleep` to point at the
+module where `time` is now imported.
+
+**Line counts:**
+
+| File | Before | After |
+|---|---|---|
+| `src/meo/content.py` | 486 | 335 (−31%) |
+| `src/meo/llm.py` | — | 165 (new) |
+
+**Tests:** 1697/1697 pass unchanged.
+
+---
+
 ## Completed this run (run 82)
 
 ### feat(qa): add Q&A (Questions & Answers) auto-answer feature

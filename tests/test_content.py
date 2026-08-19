@@ -258,7 +258,7 @@ def test_call_with_retry_succeeds_immediately():
         calls.append(1)
         return "ok"
 
-    with patch("meo.content.time.sleep") as mock_sleep:
+    with patch("meo.llm.time.sleep") as mock_sleep:
         result = content._call_with_retry(fn, max_attempts=3)
 
     assert result == "ok"
@@ -276,7 +276,7 @@ def test_call_with_retry_succeeds_on_second_attempt():
             raise RuntimeError("transient error")
         return "ok"
 
-    with patch("meo.content.time.sleep"):
+    with patch("meo.llm.time.sleep"):
         result = content._call_with_retry(fn, max_attempts=3)
 
     assert result == "ok"
@@ -288,7 +288,7 @@ def test_call_with_retry_raises_after_all_attempts_fail():
     def fn():
         raise RuntimeError("persistent error")
 
-    with patch("meo.content.time.sleep"):
+    with patch("meo.llm.time.sleep"):
         with pytest.raises(RuntimeError, match="persistent error"):
             content._call_with_retry(fn, max_attempts=3)
 
@@ -301,7 +301,7 @@ def test_call_with_retry_does_not_retry_environment_error():
         calls.append(1)
         raise EnvironmentError("no key")
 
-    with patch("meo.content.time.sleep") as mock_sleep:
+    with patch("meo.llm.time.sleep") as mock_sleep:
         with pytest.raises(EnvironmentError):
             content._call_with_retry(fn, max_attempts=3)
 
@@ -319,7 +319,7 @@ def test_call_with_retry_sleeps_between_attempts():
             raise RuntimeError("fail")
         return "ok"
 
-    with patch("meo.content.time.sleep") as mock_sleep:
+    with patch("meo.llm.time.sleep") as mock_sleep:
         content._call_with_retry(fn, max_attempts=3, base_delay=1.0)
 
     assert mock_sleep.call_count == 2  # slept after attempt 1 and 2
@@ -456,10 +456,10 @@ def test_call_with_retry_rate_limit_uses_longer_delay():
     rate_delays: list[float] = []
     generic_delays: list[float] = []
 
-    with patch("meo.content.time.sleep", side_effect=lambda d: rate_delays.append(d)):
+    with patch("meo.llm.time.sleep", side_effect=lambda d: rate_delays.append(d)):
         content._call_with_retry(make_fn("rate limit reached"), max_attempts=3, base_delay=1.0)
 
-    with patch("meo.content.time.sleep", side_effect=lambda d: generic_delays.append(d)):
+    with patch("meo.llm.time.sleep", side_effect=lambda d: generic_delays.append(d)):
         content._call_with_retry(make_fn("server error 500"), max_attempts=3, base_delay=1.0)
 
     assert len(rate_delays) == 1
