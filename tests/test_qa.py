@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch, call
 import pytest
 import requests
@@ -131,11 +132,12 @@ def test_extract_question_id_missing_name():
 # ---------------------------------------------------------------------------
 
 def test_question_age_days_recent_is_small():
-    # A question created today should have age close to 0.
-    q = {"createTime": "2026-08-18T00:00:00.000Z"}
+    # A question created 1 hour ago should have age close to 0.
+    recent = datetime.now(timezone.utc) - timedelta(hours=1)
+    q = {"createTime": recent.strftime("%Y-%m-%dT%H:%M:%S.000Z")}
     age = _question_age_days(q)
     assert age is not None
-    assert 0 <= age < 2
+    assert 0 <= age < 1
 
 
 def test_question_age_days_old_is_large():
