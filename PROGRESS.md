@@ -4,6 +4,30 @@
 
 ---
 
+## Completed this run (run 84)
+
+### fix(tests): replace hardcoded date in `test_question_age_days_recent_is_small`
+
+**Problem**: The test used a literal timestamp `2026-08-18T00:00:00.000Z` that
+was "today" when the test was written but became stale as calendar days passed.
+By run 84 (2026-08-20) the age computed to ~2.04 days, tripping the assertion
+`age < 2`.
+
+**Fix**: Replaced the hardcoded string with a timestamp computed at test runtime
+(`datetime.now(timezone.utc) - timedelta(hours=1)`), and tightened the bound to
+`< 1` day since an hour-old question is definitively recent. The fix is robust
+regardless of when the test runs in future.
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `tests/test_qa.py` | Import `datetime`, `timezone`, `timedelta`; compute timestamp dynamically |
+
+**Tests: 1697/1697 pass.**
+
+---
+
 ## Completed this run (run 83)
 
 ### refactor(llm): extract LLM abstraction from `content.py` into `src/meo/llm.py`
