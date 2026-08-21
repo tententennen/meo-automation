@@ -4,6 +4,50 @@
 
 ---
 
+## Completed this run (run 85)
+
+### refactor: split oversized modules to enforce 400-line cap
+
+Three modules exceeded 400 lines. Each was split into focused sub-modules with
+re-exports to preserve full backward compatibility for existing tests.
+
+**`business_profile.py` (was ~530 lines → 329)**
+- `_bp_constants.py` (~75 lines): shared URL templates, timeout, `_qa_location_name`, `_raise_for_status`
+- `_bp_auth_session.py` (~81 lines): `_AuthSession` class (requests.Session wrapper with retry + Bearer injection)
+- `_bp_post_types.py` (~162 lines): `_PostTypesMixin` — `create_offer_post`, `create_event_post`
+- `_bp_qa.py` (~84 lines): `_QaMixin` — `list_questions`, `upsert_answer`
+- `business_profile.py` re-exports `_AuthSession`, `_raise_for_status`, `_DEFAULT_TIMEOUT` for test compat
+
+**`state.py` (was ~530 lines → 334)**
+- `_state_io.py` (~109 lines): `_load`, `_save`, `_record_rotation`, `_clear_section`, `_today`; uses lazy import `_get_state_file()` so `monkeypatch.setattr(state_mod, "_STATE_FILE", ...)` patches propagate
+- `_state_reviews.py` (~130 lines): review tracking functions; `_today` and `_REPLIED_REVIEW_CAPACITY` read lazily from `meo.state` at call time so test patches propagate
+- `_state_run.py` (~66 lines): `record_run_result`, `get_run_streak`; `_today` also lazy from `meo.state`
+- `state.py` keeps `_STATE_FILE` definition and all constants; re-exports sub-module functions
+
+**`tools/score.py` (was ~460 lines → 332)**
+- `tools/_score_grades.py` (~144 lines): all grade constants, `_grade_rank`, `_worst_grade`, `_is_healthy`, dimension scorers, metric extractors
+- `score.py` re-exports all grade helpers for test compat
+
+**Files modified/created:**
+
+| File | Lines | Action |
+|---|---|---|
+| `src/meo/business_profile.py` | 329 | Rewritten — mixins + re-exports |
+| `src/meo/_bp_constants.py` | 75 | New |
+| `src/meo/_bp_auth_session.py` | 81 | New |
+| `src/meo/_bp_post_types.py` | 162 | New |
+| `src/meo/_bp_qa.py` | 84 | New |
+| `src/meo/state.py` | 334 | Rewritten — re-exports sub-modules |
+| `src/meo/_state_io.py` | 109 | New |
+| `src/meo/_state_reviews.py` | 130 | New |
+| `src/meo/_state_run.py` | 66 | New |
+| `src/meo/tools/score.py` | 332 | Trimmed — imports grade helpers |
+| `src/meo/tools/_score_grades.py` | 144 | New |
+
+**Tests: 1697/1697 pass.**
+
+---
+
 ## Completed this run (run 84)
 
 ### fix(tests): replace hardcoded date in `test_question_age_days_recent_is_small`
