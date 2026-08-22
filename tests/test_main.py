@@ -483,3 +483,124 @@ def test_main_does_not_record_run_result_for_config_skipped_store():
             main()
 
     mock_record.assert_not_called()
+
+
+def test_main_records_failure_on_qa_exception():
+    """record_run_result is called with error_type='qa_error' when only Q&A raises."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.run_qa_for_store", side_effect=RuntimeError("Q&A API error")), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "qa_error")
+
+
+def test_main_records_failure_on_qa_errors_list():
+    """record_run_result uses qa_error when Q&A returns a non-empty errors list."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    def qa_with_errors(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "answered": 0, "errors": ["LLM timeout"]}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.run_qa_for_store", side_effect=qa_with_errors), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "qa_error")
+
+
+def test_main_records_post_qa_error_when_post_and_qa_fail():
+    """record_run_result uses 'post_qa_error' when post and Q&A both fail."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=RuntimeError("post fail")), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.run_qa_for_store", side_effect=RuntimeError("qa fail")), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "post_qa_error")
+
+
+def test_main_records_review_qa_error_when_review_and_qa_fail():
+    """record_run_result uses 'review_qa_error' when review and Q&A both fail."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=RuntimeError("review fail")), \
+         patch("meo.main.run_qa_for_store", side_effect=RuntimeError("qa fail")), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "review_qa_error")
+
+
+def test_main_records_all_error_when_all_three_steps_fail():
+    """record_run_result uses 'all_error' when post, review, and Q&A all fail."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=RuntimeError("post fail")), \
+         patch("meo.main.run_reviews_for_store", side_effect=RuntimeError("review fail")), \
+         patch("meo.main.run_qa_for_store", side_effect=RuntimeError("qa fail")), \
+         patch("meo.main.record_run_result") as mock_record:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_record.assert_called_once_with("the_body_kyoto", False, "all_error")

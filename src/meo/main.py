@@ -199,12 +199,23 @@ def main() -> None:
             review_err = isinstance(store_results.get("reviews"), dict) and bool(
                 store_results["reviews"].get("error") or store_results["reviews"].get("errors")
             )
-            if post_err and review_err:
-                _error_type: str | None = "both_error"
+            qa_err = isinstance(store_results.get("qa"), dict) and bool(
+                store_results["qa"].get("error") or store_results["qa"].get("errors")
+            )
+            if post_err and review_err and qa_err:
+                _error_type: str | None = "all_error"
+            elif post_err and review_err:
+                _error_type = "both_error"
+            elif post_err and qa_err:
+                _error_type = "post_qa_error"
+            elif review_err and qa_err:
+                _error_type = "review_qa_error"
             elif post_err:
                 _error_type = "post_error"
             elif review_err:
                 _error_type = "review_error"
+            elif qa_err:
+                _error_type = "qa_error"
             else:
                 _error_type = None
             record_run_result(store_key, _error_type is None, _error_type)

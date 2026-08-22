@@ -38,7 +38,11 @@ _DEFAULT_THRESHOLD = 2
 _ERROR_TYPE_LABELS: dict[str, str] = {
     "post_error": "投稿エラー",
     "review_error": "レビュー返信エラー",
+    "qa_error": "Q&A回答エラー",
     "both_error": "投稿・返信エラー",
+    "post_qa_error": "投稿・Q&Aエラー",
+    "review_qa_error": "返信・Q&Aエラー",
+    "all_error": "投稿・返信・Q&Aエラー",
 }
 
 

@@ -172,6 +172,26 @@ class TestFormatAlert:
         out = _format_alert([alert], today=_TODAY)
         assert "投稿・返信エラー" in out
 
+    def test_error_type_label_qa_error(self):
+        alert = {**_ALERT, "last_error_type": "qa_error"}
+        out = _format_alert([alert], today=_TODAY)
+        assert "Q&A回答エラー" in out
+
+    def test_error_type_label_post_qa_error(self):
+        alert = {**_ALERT, "last_error_type": "post_qa_error"}
+        out = _format_alert([alert], today=_TODAY)
+        assert "投稿・Q&Aエラー" in out
+
+    def test_error_type_label_review_qa_error(self):
+        alert = {**_ALERT, "last_error_type": "review_qa_error"}
+        out = _format_alert([alert], today=_TODAY)
+        assert "返信・Q&Aエラー" in out
+
+    def test_error_type_label_all_error(self):
+        alert = {**_ALERT, "last_error_type": "all_error"}
+        out = _format_alert([alert], today=_TODAY)
+        assert "投稿・返信・Q&Aエラー" in out
+
     def test_error_type_none_shows_fallback(self):
         alert = {**_ALERT, "last_error_type": None}
         out = _format_alert([alert], today=_TODAY)

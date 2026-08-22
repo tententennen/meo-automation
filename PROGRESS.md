@@ -1,6 +1,54 @@
 # PROGRESS
 
-## Status: All milestones complete — 1697/1697 tests green (100% coverage)
+## Status: All milestones complete — 1706/1706 tests green (100% coverage)
+
+---
+
+## Completed this run (run 86)
+
+### fix(main): track Q&A failures in run-result streak
+
+**Problem**: When `run_qa_for_store` raised an exception or returned a dict with
+a non-empty `errors` list, `had_error` was set to `True` (causing the process to
+exit 1), but `record_run_result` was still called with `success=True` because the
+Q&A step was never included in the error-type logic. This meant the consecutive-failure
+streak used by `meo-error-alert` silently ignored Q&A failures, so the operator
+would never receive a Slack alert after repeated Q&A outages.
+
+**Fix**:
+
+1. **`src/meo/main.py`** — added `qa_err` detection alongside `post_err` and
+   `review_err`. The error-type resolution now handles all three flags:
+
+   | Flags set | `error_type` |
+   |---|---|
+   | post + review + Q&A | `"all_error"` |
+   | post + review | `"both_error"` (unchanged) |
+   | post + Q&A | `"post_qa_error"` |
+   | review + Q&A | `"review_qa_error"` |
+   | post only | `"post_error"` (unchanged) |
+   | review only | `"review_error"` (unchanged) |
+   | Q&A only | `"qa_error"` |
+   | none | `None` (success, unchanged) |
+
+2. **`src/meo/tools/error_alert.py`** — added four new labels to
+   `_ERROR_TYPE_LABELS` so `meo-error-alert` renders human-readable Japanese
+   strings for all new types instead of falling back to the raw key:
+   - `"qa_error"` → `"Q&A回答エラー"`
+   - `"post_qa_error"` → `"投稿・Q&Aエラー"`
+   - `"review_qa_error"` → `"返信・Q&Aエラー"`
+   - `"all_error"` → `"投稿・返信・Q&Aエラー"`
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `src/meo/main.py` | Added `qa_err`; expanded error-type logic from 3 branches to 7 |
+| `src/meo/tools/error_alert.py` | Added 4 Q&A error-type labels |
+| `tests/test_main.py` | 5 new tests: `qa_error`, `qa_error` (errors list), `post_qa_error`, `review_qa_error`, `all_error` |
+| `tests/test_error_alert.py` | 4 new tests: labels for all new error types |
+
+**Tests: +9 tests, 1697 → 1706, 100% coverage maintained.**
 
 ---
 
