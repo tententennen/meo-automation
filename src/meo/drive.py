@@ -34,7 +34,9 @@ class DriveClient:
     def list_images(self, folder_id: str) -> list[dict[str, Any]]:
         """Return metadata for all image files in a Drive folder.
 
-        Each item has at minimum: id, name, mimeType, webContentLink.
+        Each item has at minimum: id, name, mimeType, webContentLink, size.
+        The size field is a string integer (bytes); absent on files whose size
+        is not tracked by Drive (treat as 0 — include in selection).
         """
         query = (
             f"'{folder_id}' in parents"
@@ -50,7 +52,7 @@ class DriveClient:
             kwargs: dict[str, Any] = {
                 "q": query,
                 "spaces": "drive",
-                "fields": "nextPageToken, files(id, name, mimeType, webContentLink)",
+                "fields": "nextPageToken, files(id, name, mimeType, webContentLink, size)",
                 "pageSize": 100,
             }
             if page_token:
@@ -72,18 +74,45 @@ class DriveClient:
         folder_id: str,
         *,
         recent_ids: list[str] | None = None,
+        max_bytes: int | None = None,
     ) -> dict[str, Any] | None:
         """Return metadata for a randomly selected image in the folder, or None.
 
-        If recent_ids is provided, images whose ID appears in that list are
-        deprioritised: a fresh image is chosen at random from the remainder.
-        If every image in the folder has been recently used, any image is
-        returned (falls back to purely random selection so posts always go out).
+        Args:
+            folder_id:  Drive folder ID to list images from.
+            recent_ids: Image IDs used in recent posts.  Fresh images (not in
+                        this list) are preferred; falls back to any image when
+                        all have been recently used.
+            max_bytes:  If set, images whose ``size`` field exceeds this value
+                        are excluded.  Images with no ``size`` field are always
+                        included.  Returns None (instead of an oversized image)
+                        when every image in the folder exceeds the limit.
+                        Default GBP upload limit: 5 242 880 bytes (5 MB).
         """
         images = self.list_images(folder_id)
         if not images:
             logger.warning("No images found in Drive folder %s", folder_id)
             return None
+
+        if max_bytes is not None:
+            valid = [
+                img for img in images
+                if int(img.get("size") or 0) <= max_bytes
+            ]
+            if not valid:
+                logger.warning(
+                    "All %d image(s) in Drive folder %s exceed the %d-byte size limit; "
+                    "skipping photo attachment.",
+                    len(images), folder_id, max_bytes,
+                )
+                return None
+            if len(valid) < len(images):
+                logger.debug(
+                    "Filtered %d oversized image(s) from folder %s (%d remain).",
+                    len(images) - len(valid), folder_id, len(valid),
+                )
+            images = valid
+
         if recent_ids:
             recent = set(recent_ids)
             fresh = [img for img in images if img["id"] not in recent]

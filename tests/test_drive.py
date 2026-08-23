@@ -6,13 +6,16 @@ import pytest
 from meo.drive import DriveClient
 
 
-def _make_file(file_id: str, name: str, mime: str = "image/jpeg") -> dict:
-    return {
+def _make_file(file_id: str, name: str, mime: str = "image/jpeg", size: str | None = None) -> dict:
+    f: dict = {
         "id": file_id,
         "name": name,
         "mimeType": mime,
         "webContentLink": f"https://drive.google.com/uc?id={file_id}",
     }
+    if size is not None:
+        f["size"] = size
+    return f
 
 
 @pytest.fixture
@@ -154,3 +157,100 @@ def test_get_image_metadata_propagates_http_error(client, mock_service):
     mock_service.files().get.return_value.execute.side_effect = RuntimeError("404 not found")
     with pytest.raises(RuntimeError, match="404"):
         client.get_image_metadata("nonexistent_file")
+
+
+# ---------------------------------------------------------------------------
+# list_images — size field included in API fields string
+# ---------------------------------------------------------------------------
+
+def test_list_images_requests_size_field(client, mock_service):
+    """list_images must include 'size' in the Drive API fields parameter."""
+    mock_service.files().list().execute.return_value = {"files": []}
+    client.list_images("folder_id")
+    call_kwargs = mock_service.files().list.call_args.kwargs
+    assert "size" in call_kwargs.get("fields", ""), (
+        f"Expected 'size' in Drive fields string; got: {call_kwargs.get('fields')}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# pick_random_image — max_bytes size filter
+# ---------------------------------------------------------------------------
+
+def test_pick_random_image_size_filter_excludes_oversized(client, mock_service):
+    """Images exceeding max_bytes are excluded; a smaller image is picked."""
+    mock_service.files().list().execute.return_value = {
+        "files": [
+            _make_file("small", "small.jpg", size="1000"),
+            _make_file("large", "large.jpg", size="10000000"),
+        ],
+    }
+    result = client.pick_random_image("folder_id", max_bytes=5_000_000)
+    assert result is not None
+    assert result["id"] == "small"
+
+
+def test_pick_random_image_all_oversized_returns_none(client, mock_service):
+    """When every image exceeds max_bytes, pick_random_image returns None."""
+    mock_service.files().list().execute.return_value = {
+        "files": [_make_file("big", "big.jpg", size="9999999")],
+    }
+    result = client.pick_random_image("folder_id", max_bytes=5_000_000)
+    assert result is None
+
+
+def test_pick_random_image_all_oversized_logs_warning(client, mock_service, caplog):
+    """When all images are oversized, a WARNING is logged describing the situation."""
+    import logging
+    mock_service.files().list().execute.return_value = {
+        "files": [_make_file("big", "big.jpg", size="9999999")],
+    }
+    with caplog.at_level(logging.WARNING, logger="meo.drive"):
+        client.pick_random_image("folder_id", max_bytes=5_000_000)
+    assert any("size limit" in r.message for r in caplog.records if r.levelno >= logging.WARNING)
+
+
+def test_pick_random_image_missing_size_field_is_included(client, mock_service):
+    """Images with no 'size' field are treated as 0 bytes and always included."""
+    mock_service.files().list().execute.return_value = {
+        "files": [_make_file("no_size", "photo.jpg")],  # no size key
+    }
+    result = client.pick_random_image("folder_id", max_bytes=1)
+    assert result is not None
+    assert result["id"] == "no_size"
+
+
+def test_pick_random_image_exact_limit_is_included(client, mock_service):
+    """An image whose size exactly equals max_bytes is included (boundary is inclusive)."""
+    mock_service.files().list().execute.return_value = {
+        "files": [_make_file("edge", "edge.jpg", size="5242880")],
+    }
+    result = client.pick_random_image("folder_id", max_bytes=5_242_880)
+    assert result is not None
+    assert result["id"] == "edge"
+
+
+def test_pick_random_image_size_filter_then_recent_ids_filter(client, mock_service):
+    """Size filtering applies before recent-ids filtering; fresh valid image is preferred."""
+    mock_service.files().list().execute.return_value = {
+        "files": [
+            _make_file("used_small", "used.jpg", size="1000"),
+            _make_file("fresh_small", "fresh.jpg", size="2000"),
+            _make_file("oversized", "big.jpg", size="9999999"),
+        ],
+    }
+    result = client.pick_random_image(
+        "folder_id", recent_ids=["used_small"], max_bytes=5_000_000
+    )
+    assert result is not None
+    assert result["id"] == "fresh_small"
+
+
+def test_pick_random_image_no_max_bytes_does_not_filter(client, mock_service):
+    """When max_bytes is None (default), size is not checked and all images are eligible."""
+    mock_service.files().list().execute.return_value = {
+        "files": [_make_file("huge", "huge.jpg", size="999999999")],
+    }
+    result = client.pick_random_image("folder_id")  # no max_bytes
+    assert result is not None
+    assert result["id"] == "huge"

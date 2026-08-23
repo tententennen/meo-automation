@@ -1,6 +1,36 @@
 # PROGRESS
 
-## Status: All milestones complete — 1706/1706 tests green (100% coverage)
+## Status: All milestones complete — 1723/1723 tests green (100% coverage)
+
+---
+
+## Completed this run (run 87)
+
+### feat(drive): Drive image size filtering — skip oversized files before GBP upload
+
+**Problem**: The Drive client picked a random image from a folder without checking
+its size. If a photographer's folder contains a large RAW-converted photo (>5 MB),
+the GBP upload attempt would fail silently, and the daily post would go out without
+a photo. The operator had no warning that images were being skipped due to size.
+
+**Fix**: Added a `max_bytes` parameter to `DriveClient.pick_random_image()` that
+filters out oversized images before the upload is even attempted. Also added
+`size` to the Drive API fields requested by `list_images()` so image sizes are
+available without an extra API round-trip.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/drive.py` | `list_images`: add `size` to Drive API fields. `pick_random_image`: add `max_bytes` param; filter oversized images; return `None` + WARNING when all images exceed the limit; images with no `size` field pass through (treated as 0 bytes) |
+| `config/content.yaml` | New default: `max_drive_image_bytes: 5242880` (5 MB — GBP limit) |
+| `src/meo/validator.py` | Validate `max_drive_image_bytes` in `validate_content` (must be positive int); add to `_ALLOWED_OVERRIDE_KEYS` so stores can set a tighter per-store limit |
+| `src/meo/posts.py` | Read `max_drive_image_bytes` from `effective_defaults` and pass to `pick_random_image`. When `pick_random_image` returns `None` without exception (empty folder OR all oversized), suppress the generic "No images found" WARNING — the method already logged the specific reason |
+| `tests/test_drive.py` | 8 new tests: `size` field in API request, oversized filtered, all-oversized returns `None`, all-oversized logs WARNING, missing `size` field included, boundary included, size+recent_ids combined, no `max_bytes` passes everything |
+| `tests/test_posts.py` | 3 new tests: `max_bytes` passed from config, default 5 MB used when absent, no misleading "No images found" warning when `pick_random_image` returns `None` |
+| `tests/test_validator.py` | 6 new tests: absent is valid, positive int valid, zero/negative/float invalid; override key accepted |
+
+**Tests: +17 tests, 1706 → 1723, 100% coverage maintained.**
 
 ---
 

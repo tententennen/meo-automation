@@ -29,6 +29,7 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "recent_post_context_count",
     "recent_reply_context_count",
     "post_time_window_jst",
+    "max_drive_image_bytes",
 })
 
 _TIME_WINDOW_PATTERN = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
@@ -200,6 +201,15 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
                             f"content.yaml: defaults.post_time_window_jst {window!r} contains "
                             "out-of-range hour or minute values"
                         )
+
+        max_image_bytes = defaults.get("max_drive_image_bytes")
+        if max_image_bytes is not None and (
+            not isinstance(max_image_bytes, int) or max_image_bytes < 1
+        ):
+            errors.append(
+                "content.yaml: defaults.max_drive_image_bytes must be a positive integer "
+                "(default: 5242880 = 5 MB, the GBP upload limit)"
+            )
 
     return errors
 

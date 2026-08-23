@@ -595,3 +595,55 @@ def test_validate_stores_override_post_time_window_jst_is_allowed():
     }
     errors = v.validate_stores(stores)
     assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# validate_content — max_drive_image_bytes
+# ---------------------------------------------------------------------------
+
+def _content_with_max_image_bytes(value):
+    base = _VALID_CONTENT.copy()
+    base["defaults"] = {**base["defaults"], "max_drive_image_bytes": value}
+    return base
+
+
+def test_validate_content_max_drive_image_bytes_absent_is_valid():
+    """max_drive_image_bytes is optional; omitting it is valid."""
+    errors = v.validate_content(_VALID_CONTENT)
+    assert not any("max_drive_image_bytes" in e for e in errors)
+
+
+def test_validate_content_max_drive_image_bytes_positive_integer_is_valid():
+    errors = v.validate_content(_content_with_max_image_bytes(5_242_880))
+    assert not any("max_drive_image_bytes" in e for e in errors)
+
+
+def test_validate_content_max_drive_image_bytes_zero_is_invalid():
+    errors = v.validate_content(_content_with_max_image_bytes(0))
+    assert any("max_drive_image_bytes" in e for e in errors)
+
+
+def test_validate_content_max_drive_image_bytes_negative_is_invalid():
+    errors = v.validate_content(_content_with_max_image_bytes(-1))
+    assert any("max_drive_image_bytes" in e for e in errors)
+
+
+def test_validate_content_max_drive_image_bytes_float_is_invalid():
+    errors = v.validate_content(_content_with_max_image_bytes(5.5))
+    assert any("max_drive_image_bytes" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# validate_stores — max_drive_image_bytes override
+# ---------------------------------------------------------------------------
+
+def test_validate_stores_max_drive_image_bytes_is_allowed_override():
+    """max_drive_image_bytes is accepted as a per-store override key."""
+    stores = {
+        "store_a": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"max_drive_image_bytes": 2_000_000},
+        }
+    }
+    errors = v.validate_stores(stores)
+    assert errors == []

@@ -621,3 +621,74 @@ def test_run_post_dry_run_skips_when_outside_time_window():
 
     assert result["status"] == "skipped_window"
     mock_gen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# max_drive_image_bytes — posts.py passes size limit to pick_random_image
+# ---------------------------------------------------------------------------
+
+def test_max_drive_image_bytes_passed_to_pick_random_image():
+    """posts.py reads max_drive_image_bytes from config and passes it to pick_random_image."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"), \
+         patch("meo.posts.cfg.effective_defaults", return_value={
+             "post_cadence_days": 1,
+             "max_drive_image_bytes": 1_000_000,
+         }):
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    drive.pick_random_image.assert_called_once()
+    _, kwargs = drive.pick_random_image.call_args
+    assert kwargs.get("max_bytes") == 1_000_000
+
+
+def test_max_drive_image_bytes_defaults_to_5mb_when_absent():
+    """When max_drive_image_bytes is absent from config, the default 5 MB is passed."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"), \
+         patch("meo.posts.cfg.effective_defaults", return_value={
+             "post_cadence_days": 1,
+         }):
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    drive.pick_random_image.assert_called_once()
+    _, kwargs = drive.pick_random_image.call_args
+    assert kwargs.get("max_bytes") == 5_242_880
+
+
+def test_all_oversized_images_does_not_emit_misleading_no_images_warning(caplog):
+    """When pick_random_image returns None (e.g. all oversized), the generic
+    'No images found in Drive folder' warning must NOT appear in posts.py logs.
+    pick_random_image already logged the oversized reason; a second misleading
+    message would confuse the operator into thinking the folder is empty.
+    """
+    import logging
+    gbp, drive, post_text = _make_mocks()
+    drive.pick_random_image.return_value = None  # simulates all-oversized or empty folder
+    with caplog.at_level(logging.WARNING, logger="meo.posts"), \
+         patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"):
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    warning_msgs = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not any("No images found" in m for m in warning_msgs), (
+        f"Expected no 'No images found' WARNING when pick_random_image returns None, "
+        f"got: {warning_msgs}"
+    )

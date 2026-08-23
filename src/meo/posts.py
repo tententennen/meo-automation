@@ -157,8 +157,9 @@ def run_post_for_store(
     post_text = generate_post(store, forced_theme=chosen_theme)
     logger.info("[%s] Post text (%d chars): %s", store_key, len(post_text), post_text[:80])
 
-    # --- Image selection (prefer images not used recently) ---
+    # --- Image selection (prefer images not used recently; skip oversized files) ---
     recent_image_ids = get_recent_images(store_key)
+    max_image_bytes: int = store_defaults.get("max_drive_image_bytes", 5_242_880)
     # suppress_no_image_warning is set when image_meta=None for a reason other than an
     # empty folder — the folder is not yet configured (debug-only) or the Drive call failed
     # (already warned above).  The "No images found" warning below is reserved for the
@@ -173,7 +174,12 @@ def run_post_for_store(
         suppress_no_image_warning = True
     else:
         try:
-            image_meta = drive.pick_random_image(folder_id, recent_ids=recent_image_ids)
+            image_meta = drive.pick_random_image(
+                folder_id, recent_ids=recent_image_ids, max_bytes=max_image_bytes
+            )
+            if image_meta is None:
+                # pick_random_image already logged the reason (empty folder or all oversized).
+                suppress_no_image_warning = True
         except Exception as exc:
             logger.warning(
                 "[%s] Drive image selection failed (%s); posting without photo.",
