@@ -246,7 +246,11 @@ def run_post_for_store(
     # --- Live post ---
     result = gbp.create_local_post(location_id, post_text, media_url, call_to_action=call_to_action)
     record_post(store_key)
-    record_post_content(store_key, post_text, chosen_theme, result.get("name"))
+    record_post_content(
+        store_key, post_text, chosen_theme, result.get("name"),
+        image_id=image_meta["id"] if image_meta else None,
+        image_name=image_meta.get("name") if image_meta else None,
+    )
     if image_meta:
         record_image(store_key, image_meta["id"])
     if chosen_theme:

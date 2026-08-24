@@ -229,6 +229,23 @@ def test_record_post_content_manual_defaults_to_false(frozen_today):
     assert history[0]["manual"] is False
 
 
+def test_record_post_content_stores_image_id_and_name(frozen_today):
+    state_mod.record_post_content(
+        "my_store", "写真付き投稿", "テーマ",
+        image_id="abc123", image_name="summer.jpg",
+    )
+    entry = state_mod.get_post_history("my_store")[0]
+    assert entry["image_id"] == "abc123"
+    assert entry["image_name"] == "summer.jpg"
+
+
+def test_record_post_content_omits_image_fields_when_none(frozen_today):
+    state_mod.record_post_content("my_store", "写真なし投稿", "テーマ")
+    entry = state_mod.get_post_history("my_store")[0]
+    assert "image_id" not in entry
+    assert "image_name" not in entry
+
+
 # ---------------------------------------------------------------------------
 # Reply content archiving tests
 # ---------------------------------------------------------------------------

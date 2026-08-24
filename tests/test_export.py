@@ -167,6 +167,37 @@ class TestExportPosts:
         keys = {r["store_key"] for r in rows}
         assert keys == {"the_body_kyoto"}  # mybear has no history in fixture
 
+    def test_image_fields_included_when_present(self, monkeypatch):
+        """image_id and image_name from the history entry appear in the CSV row."""
+        from meo.tools.export import export_posts
+        history_with_image = [
+            {
+                "date": "2026-01-10",
+                "theme": "季節のお手入れ情報",
+                "text": "写真付き投稿",
+                "post_name": "accounts/123/localPosts/1",
+                "image_id": "abc123",
+                "image_name": "summer.jpg",
+            }
+        ]
+        monkeypatch.setattr(
+            "meo.tools.export.state.get_post_history",
+            lambda k: history_with_image if k == "the_body_kyoto" else [],
+        )
+        rows = export_posts(_STORES)
+        row = next(r for r in rows if r["store_key"] == "the_body_kyoto")
+        assert row["image_id"] == "abc123"
+        assert row["image_name"] == "summer.jpg"
+
+    def test_image_fields_empty_string_when_absent(self, _patch_post_history):
+        """History entries without image fields export as empty strings (backward compat)."""
+        from meo.tools.export import export_posts
+        rows = export_posts(_STORES)
+        # _POST_HISTORY_KYOTO entries have no image_id / image_name
+        for row in rows:
+            assert row["image_id"] == ""
+            assert row["image_name"] == ""
+
 
 # ---------------------------------------------------------------------------
 # export_replies()

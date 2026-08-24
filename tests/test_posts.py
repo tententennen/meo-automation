@@ -367,6 +367,43 @@ def test_record_post_content_not_called_on_dry_run():
     mock_archive.assert_not_called()
 
 
+def test_record_post_content_includes_image_metadata():
+    """record_post_content must receive Drive image_id and image_name when an image is selected."""
+    gbp, drive, post_text = _make_mocks()
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"), \
+         patch("meo.posts.record_post_content") as mock_archive:
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    kwargs = mock_archive.call_args.kwargs
+    assert kwargs.get("image_id") == _IMAGE_META["id"]
+    assert kwargs.get("image_name") == _IMAGE_META["name"]
+
+
+def test_record_post_content_no_image_fields_when_no_image():
+    """When Drive returns no image, image_id and image_name must be None."""
+    gbp, drive, post_text = _make_mocks()
+    drive.pick_random_image.return_value = None
+    with patch("meo.posts.generate_post", return_value=post_text), \
+         patch("meo.posts.should_post_today", return_value=True), \
+         patch("meo.posts.get_recent_images", return_value=[]), \
+         patch("meo.posts.get_recent_themes", return_value=[]), \
+         patch("meo.posts.record_post"), \
+         patch("meo.posts.record_image"), \
+         patch("meo.posts.record_theme"), \
+         patch("meo.posts.record_post_content") as mock_archive:
+        run_post_for_store(_STORE, gbp, drive, dry_run=False)
+
+    kwargs = mock_archive.call_args.kwargs
+    assert kwargs.get("image_id") is None
+    assert kwargs.get("image_name") is None
+
+
 # ---------------------------------------------------------------------------
 # --force flag test
 # ---------------------------------------------------------------------------

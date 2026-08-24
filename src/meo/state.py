@@ -160,11 +160,18 @@ def record_post_content(
     post_name: str | None = None,
     *,
     manual: bool = False,
+    image_id: str | None = None,
+    image_name: str | None = None,
 ) -> None:
     """Archive the generated post text for this store (last _POST_HISTORY_SIZE kept).
 
     Set manual=True when the post text was supplied by the owner (via meo-post-manual)
     rather than AI-generated, so history viewers can distinguish the two.
+
+    image_id / image_name: Drive file ID and filename of the photo attached to the
+    post.  Stored when provided so meo-export can report which Drive image appeared
+    in each post; omitted from the entry dict when None to keep state.json compact
+    and backward-compatible with entries that predate this field.
     """
     entry: dict[str, Any] = {
         "date": _today().isoformat(),
@@ -173,6 +180,10 @@ def record_post_content(
         "post_name": post_name or "",
         "manual": manual,
     }
+    if image_id:
+        entry["image_id"] = image_id
+    if image_name:
+        entry["image_name"] = image_name
     state = _load()
     history: list[dict] = state.setdefault("post_history", {}).setdefault(store_key, [])
     history.insert(0, entry)

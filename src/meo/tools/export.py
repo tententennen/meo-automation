@@ -31,7 +31,7 @@ except ImportError:  # pragma: no cover
 from .. import config as cfg
 from .. import state
 
-_POST_FIELDS = ["store_key", "store_name", "date", "theme", "text", "post_name"]
+_POST_FIELDS = ["store_key", "store_name", "date", "theme", "text", "post_name", "image_id", "image_name"]
 _REPLY_FIELDS = ["store_key", "store_name", "date", "reviewer", "stars", "review_id", "reply"]
 _HELD_FIELDS = ["store_key", "store_name", "date", "review_date", "review_id", "reviewer", "stars", "comment"]
 _SCORE_HISTORY_FIELDS = ["date", "store_key", "store_name", "grade"]
@@ -50,6 +50,8 @@ def export_posts(stores: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "theme": entry.get("theme", ""),
                 "text": entry.get("text", ""),
                 "post_name": entry.get("post_name", ""),
+                "image_id": entry.get("image_id", ""),
+                "image_name": entry.get("image_name", ""),
             })
     return rows
 

@@ -1,6 +1,41 @@
 # PROGRESS
 
-## Status: All milestones complete — 1723/1723 tests green (100% coverage)
+## Status: All milestones complete — 1729/1729 tests green (100% coverage)
+
+---
+
+## Completed this run (run 88)
+
+### feat(state): record Drive image metadata in post history archive
+
+**Problem**: The post history archive (used by `meo-export posts` and
+`meo-content-check`) recorded the post text, theme, GBP post name, and
+whether the post was manual, but not which Drive photo was attached. After
+running for several weeks, the operator has no way to see — without opening
+GBP in a browser — which image appeared in each post, or whether the
+rotation logic is spreading photos across posts as expected.
+
+**Fix**: Added `image_id` (Drive file ID) and `image_name` (filename) as
+optional keyword parameters to `record_post_content()`. Both are stored in
+the `post_history` entry when provided, and omitted when `None` — this
+keeps `state.json` compact and backward-compatible with pre-existing
+entries that predate the field (they simply yield empty strings when
+exported). `posts.py` passes these values from `image_meta` after every
+successful live post; `meo-export posts` surfaces them as two new CSV
+columns.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/state.py` | `record_post_content`: add `image_id` and `image_name` keyword params; include in entry dict only when truthy |
+| `src/meo/posts.py` | Pass `image_id` / `image_name` from `image_meta` to `record_post_content`; `None` when no image was selected |
+| `src/meo/tools/export.py` | Add `image_id` and `image_name` to `_POST_FIELDS` and to each row in `export_posts()` |
+| `tests/test_state.py` | 2 new tests: fields stored when provided; fields absent from entry when `None` |
+| `tests/test_posts.py` | 2 new tests: image kwargs forwarded to archive when image selected; `None` kwargs when no image |
+| `tests/test_export.py` | 2 new tests: image fields in CSV row when present in history; empty string when absent (backward compat) |
+
+**Tests: +6 tests, 1723 → 1729, 100% coverage maintained.**
 
 ---
 
