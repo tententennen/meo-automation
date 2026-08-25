@@ -8,8 +8,15 @@ from meo.main import main
 
 @pytest.fixture(autouse=True)
 def bypass_validation(monkeypatch):
-    """Skip config validation for all main.py tests — it is tested separately in test_validator.py."""
+    """Skip config validation and score snapshot for all main.py tests.
+
+    validate_all is tested in test_validator.py.
+    run_score / record_score_snapshot are tested by the dedicated score-snapshot tests below.
+    All other tests opt in explicitly when they need to observe these calls.
+    """
     monkeypatch.setattr("meo.main.validate_all", lambda **_: [])
+    monkeypatch.setattr("meo.main.run_score", lambda store_filter=None, today=None: [])
+    monkeypatch.setattr("meo.main.record_score_snapshot", lambda date_str, grades: None)
 
 
 def _fake_store(key: str, location_id: str = "accounts/1/locations/1") -> dict:
@@ -604,3 +611,123 @@ def test_main_records_all_error_when_all_three_steps_fail():
             main()
 
     mock_record.assert_called_once_with("the_body_kyoto", False, "all_error")
+
+# ---------------------------------------------------------------------------
+# Auto score-snapshot integration — recorded after each live run
+# ---------------------------------------------------------------------------
+
+def test_main_records_score_snapshot_on_live_run():
+    """run_score + record_score_snapshot called once on a successful live run."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    def fake_run_score(store_filter=None, today=None):
+        return [{"key": "the_body_kyoto", "overall": "A"}]
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.run_score", side_effect=fake_run_score) as mock_run_score, \
+         patch("meo.main.record_score_snapshot") as mock_snapshot:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_run_score.assert_called_once()
+    mock_snapshot.assert_called_once()
+    _, date_str, grades = (mock_snapshot.call_args[0][0], *mock_snapshot.call_args[0])
+    assert grades == {"the_body_kyoto": "A"}
+
+
+def test_main_score_snapshot_passes_store_filter():
+    """run_score is called with store_filter matching the --store flag."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    two_stores = [
+        _fake_store("the_body_kyoto", "accounts/1/locations/2"),
+        _fake_store("mybear_studio_kyoto", "accounts/1/locations/3"),
+    ]
+    captured_filters: list = []
+
+    def fake_run_score(store_filter=None, today=None):
+        captured_filters.append(store_filter)
+        return [{"key": "the_body_kyoto", "overall": "B"}]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo", "--store", "the_body_kyoto"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=two_stores), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.run_score", side_effect=fake_run_score), \
+         patch("meo.main.record_score_snapshot"):
+        with pytest.raises(SystemExit):
+            main()
+
+    assert len(captured_filters) == 1
+    assert captured_filters[0] == ["the_body_kyoto"]
+
+
+def test_main_does_not_record_score_snapshot_in_dry_run():
+    """record_score_snapshot must NOT be called during --dry-run."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "dry_run", "post_text": "テスト"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo", "--dry-run"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.record_score_snapshot") as mock_snapshot:
+        with pytest.raises(SystemExit):
+            main()
+
+    mock_snapshot.assert_not_called()
+
+
+def test_main_score_snapshot_failure_does_not_affect_exit_code():
+    """If run_score raises, the exception is swallowed and does not change the exit code."""
+    mock_creds, mock_gbp, mock_drive = _base_mocks()
+    one_store = [_fake_store("the_body_kyoto", "accounts/1/locations/2")]
+
+    def track_post(s, gbp, drive, *, dry_run=False, force=False):
+        return {"store_key": s["key"], "status": "posted", "post_name": "p1"}
+
+    def track_reviews(s, gbp, *, dry_run=False):
+        return {"store_key": s["key"], "replied": 0, "skipped": 0, "errors": []}
+
+    with patch("sys.argv", ["meo"]), \
+         patch("meo.main.get_credentials", return_value=mock_creds), \
+         patch("meo.main.BusinessProfileClient", return_value=mock_gbp), \
+         patch("meo.main.DriveClient", return_value=mock_drive), \
+         patch("meo.main.cfg.store_list", return_value=one_store), \
+         patch("meo.main.run_post_for_store", side_effect=track_post), \
+         patch("meo.main.run_reviews_for_store", side_effect=track_reviews), \
+         patch("meo.main.run_score", side_effect=RuntimeError("state.json corrupted")):
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+    assert exc.value.code == 0

@@ -97,6 +97,23 @@ def _format_message(results: list[dict[str, Any]], *, dry_run: bool) -> str:
                     had_error = True
                 parts.append(rev_part)
 
+        qa = r.get("qa", {})
+        if qa:
+            if qa.get("error"):
+                parts.append(f"Q&A: ❌ {qa['error']}")
+                had_error = True
+            else:
+                answered = qa.get("answered", 0)
+                deferred_qa = qa.get("deferred", 0)
+                qa_errors = qa.get("errors", [])
+                qa_part = f"Q&A: {answered}"
+                if deferred_qa:
+                    qa_part += f", {deferred_qa} deferred"
+                if qa_errors:
+                    qa_part += f", {len(qa_errors)} error(s)"
+                    had_error = True
+                parts.append(qa_part)
+
         detail = " | ".join(parts) if parts else "no actions"
         lines.append(f"• *{label}*: {detail}")
 

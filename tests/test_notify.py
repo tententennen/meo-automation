@@ -264,3 +264,107 @@ def test_format_post_skipped_window_shows_time_window_label():
     assert "skipped (time window)" in msg
     # The raw internal status name must not appear verbatim.
     assert "skipped_window" not in msg
+
+
+# ---------------------------------------------------------------------------
+# Q&A results in Slack message
+# ---------------------------------------------------------------------------
+
+def test_format_qa_answered_shown():
+    """Q&A answered count must appear in the Slack message."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+            "qa": {"answered": 3, "deferred": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "Q&A: 3" in msg
+
+
+def test_format_qa_deferred_shown():
+    """Q&A deferred count must appear when non-zero."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+            "qa": {"answered": 1, "deferred": 5, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "5 deferred" in msg
+
+
+def test_format_qa_errors_trigger_warning_footer():
+    """Q&A errors must set had_error; the ⚠️ footer must appear."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+            "qa": {"answered": 0, "deferred": 0, "errors": ["LLM timeout"]},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "1 error(s)" in msg
+    assert "⚠️" in msg
+
+
+def test_format_qa_exception_shows_error_indicator():
+    """A caught Q&A exception stored as {"error": ...} must display ❌."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+            "qa": {"error": "Q&A API 503"},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "❌" in msg
+    assert "Q&A API 503" in msg
+
+
+def test_format_qa_exception_triggers_warning_footer():
+    """When Q&A raises an exception, the footer must warn (not show ✅)."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+            "qa": {"error": "Q&A API 503"},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "⚠️" in msg
+    assert "✅" not in msg
+
+
+def test_format_qa_absent_when_not_in_results():
+    """No 'qa' key in results → message must not mention Q&A."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 1, "deferred": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "Q&A" not in msg
+
+
+def test_format_qa_zero_answered_shown():
+    """Q&A: 0 must appear when the qa dict is present with answered=0 (no questions found)."""
+    results = [
+        {
+            "store_key": "the_body_kyoto",
+            "post": {"status": "posted"},
+            "reviews": {"replied": 0, "deferred": 0, "errors": []},
+            "qa": {"answered": 0, "deferred": 0, "errors": []},
+        }
+    ]
+    msg = _format_message(results, dry_run=False)
+    assert "Q&A: 0" in msg

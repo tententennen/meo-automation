@@ -21,8 +21,10 @@ import argparse
 import logging
 import logging.handlers
 import sys
+from datetime import datetime as _datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo as _ZoneInfo
 
 # Optional: load .env in development environments only.
 # In production, env vars should already be set by the scheduler/CI system.
@@ -40,8 +42,11 @@ from .notify import send_run_summary
 from .posts import run_post_for_store
 from .qa import run_qa_for_store
 from .reviews import run_reviews_for_store
-from .state import record_run_result
+from .state import record_run_result, record_score_snapshot
+from .tools.score import run_score
 from .validator import validate_all
+
+_JST = _ZoneInfo("Asia/Tokyo")
 
 _LOG_DIR = Path(__file__).resolve().parents[2] / "logs"  # src/meo/main.py → parents[2] = repo root
 
@@ -228,6 +233,17 @@ def main() -> None:
         logger.info("  %s: %s", r["store_key"], r)
 
     send_run_summary(all_results, dry_run=args.dry_run)
+
+    # Auto-record health score snapshot (live runs only; offline — no extra API calls).
+    # Populates meo-score-history without requiring a manual meo-score invocation.
+    if not args.dry_run:
+        try:
+            _today = _datetime.now(tz=_JST).date().isoformat()
+            _grades = {r["key"]: r["overall"] for r in run_score(store_filter=args.store)}
+            record_score_snapshot(_today, _grades)
+            logger.debug("Health score snapshot recorded: %s", _grades)
+        except Exception as exc:
+            logger.warning("Score snapshot failed (non-fatal): %s", exc)
 
     sys.exit(1 if had_error else 0)
 

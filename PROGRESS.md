@@ -6613,3 +6613,54 @@ After API access is granted and `config/stores.yaml` is filled in:
    content archive is working and review AI-generated text quality in the CSV.
 9. Verify that `upload_media_bytes()` returns a `googleUrl` field and remove the TODO
    in `business_profile.py` once confirmed.
+
+---
+
+## Run 85 — 2026-08-25
+
+### What was done
+
+Two focused improvements to close gaps in the daily run output:
+
+#### 1. `notify.py` — Q&A results now included in Slack run summary
+
+The `_format_message()` function previously handled `post` and `reviews` result fields
+but silently dropped the `qa` field, so Q&A auto-answer activity was invisible in Slack.
+
+The Slack message now shows:
+- `Q&A: <N>` — number of questions answered
+- `, <N> deferred` — questions over the per-run cap (carried to next run)
+- `, <N> error(s)` — failures with ⚠️ warning footer
+- `Q&A: ❌ <message>` for a whole-store Q&A exception with ⚠️ footer
+
+#### 2. `main.py` — auto-record health score snapshot after each live run
+
+`meo-score-history` was only populated when the owner manually ran `meo-score`.
+The daily runner now automatically calls `run_score()` and `record_score_snapshot()`
+at the end of each live run (after `send_run_summary()`):
+
+- Offline call — reads from `state.json`; no extra Google API credentials needed.
+- Respects `--store` filter: only the processed stores are snapshotted.
+- Wrapped in `try/except` — a failure logs a WARNING and does not affect the exit code.
+- Skipped in `--dry-run` mode so preview runs don't pollute the grade history.
+
+#### Tests
+
+11 new tests (1740 total, up from 1729):
+- `test_notify.py` — 7 new tests covering Q&A section in Slack messages
+- `test_main.py` — 4 new tests for score snapshot (called in live mode, stores filter
+  passed through, NOT called in dry-run, failure swallowed cleanly)
+- `bypass_validation` fixture extended to also stub `run_score`/`record_score_snapshot`
+  so existing tests remain isolated from state.json writes
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+6. After first live run, check `meo-score-history` — should show today's grades
+7. Check Slack (if configured) — message should now show Q&A: N alongside replies
