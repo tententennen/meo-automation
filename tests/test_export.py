@@ -114,10 +114,34 @@ _SCORE_SNAPSHOTS = [
 ]
 
 
+_ANSWER_HISTORY_KYOTO = [
+    {
+        "date": "2026-01-10",
+        "question_id": "locations/456/questions/q001",
+        "question": "駐車場はありますか？",
+        "answer": "近隣にコインパーキングがございます。",
+    },
+    {
+        "date": "2026-01-08",
+        "question_id": "locations/456/questions/q002",
+        "question": "予約は必要ですか？",
+        "answer": "予約不要でご来店いただけます。",
+    },
+]
+
+
+@pytest.fixture()
+def _patch_answer_history(monkeypatch):
+    def _hist(store_key):
+        return list(_ANSWER_HISTORY_KYOTO) if store_key == "the_body_kyoto" else []
+    monkeypatch.setattr("meo.tools.export.state.get_answer_history", _hist)
+
+
 @pytest.fixture()
 def _no_history(monkeypatch):
     monkeypatch.setattr("meo.tools.export.state.get_post_history", lambda k: [])
     monkeypatch.setattr("meo.tools.export.state.get_reply_history", lambda k: [])
+    monkeypatch.setattr("meo.tools.export.state.get_answer_history", lambda k: [])
     monkeypatch.setattr("meo.tools.export.state.get_held_reviews", lambda k: [])
     monkeypatch.setattr("meo.tools.export.state.get_score_snapshots", lambda: [])
 
@@ -538,3 +562,98 @@ class TestMainScoreHistory:
         assert exc_info.value.code == 0
         err = capsys.readouterr().err
         assert "meo-score" in err
+
+
+# ---------------------------------------------------------------------------
+# export_answers()
+# ---------------------------------------------------------------------------
+
+class TestExportAnswers:
+    def test_returns_one_row_per_entry(self, _patch_answer_history):
+        from meo.tools.export import export_answers
+        rows = export_answers(_STORES)
+        assert len(rows) == 2  # 2 entries for kyoto; 0 for mybear
+
+    def test_row_includes_required_fields(self, _patch_answer_history):
+        from meo.tools.export import export_answers
+        row = export_answers(_STORES)[0]
+        assert row["store_key"] == "the_body_kyoto"
+        assert row["store_name"] == "THE BODY 京都店"
+        assert row["date"] == "2026-01-10"
+        assert row["question_id"] == "locations/456/questions/q001"
+        assert "駐車場" in row["question"]
+        assert "コインパーキング" in row["answer"]
+
+    def test_ordering_matches_history(self, _patch_answer_history):
+        from meo.tools.export import export_answers
+        rows = export_answers(_STORES)
+        assert rows[0]["date"] == "2026-01-10"
+        assert rows[1]["date"] == "2026-01-08"
+
+    def test_empty_store_contributes_no_rows(self, _patch_answer_history):
+        from meo.tools.export import export_answers
+        rows = export_answers([s for s in _STORES if s["key"] == "mybear_studio_kyoto"])
+        assert rows == []
+
+    def test_all_stores_combined(self, _patch_answer_history):
+        from meo.tools.export import export_answers
+        rows = export_answers(_STORES)
+        keys = {r["store_key"] for r in rows}
+        assert keys == {"the_body_kyoto"}
+
+
+# ---------------------------------------------------------------------------
+# main() — answers type
+# ---------------------------------------------------------------------------
+
+class TestMainAnswers:
+    def test_answers_prints_csv_header(self, capsys, _patch_answer_history, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "answers"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "question_id" in out
+        assert "question" in out
+        assert "answer" in out
+
+    def test_answers_content_in_output(self, capsys, _patch_answer_history, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "answers"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "the_body_kyoto" in out
+        assert "2026-01-10" in out
+
+    def test_answers_store_filter(self, capsys, _patch_answer_history, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "answers", "--store", "the_body_kyoto"])
+        from meo.tools.export import main
+        main()
+        out = capsys.readouterr().out
+        assert "the_body_kyoto" in out
+
+    def test_answers_output_file_created(self, tmp_path, _patch_answer_history, monkeypatch):
+        out_path = tmp_path / "answers.csv"
+        monkeypatch.setattr(sys, "argv", ["meo-export", "answers", "--output", str(out_path)])
+        from meo.tools.export import main
+        main()
+        assert out_path.exists()
+        content = out_path.read_text(encoding="utf-8-sig")
+        assert "question" in content
+        assert "answer" in content
+
+    def test_answers_output_file_has_japanese_content(self, tmp_path, _patch_answer_history, monkeypatch):
+        out_path = tmp_path / "answers.csv"
+        monkeypatch.setattr(sys, "argv", ["meo-export", "answers", "--output", str(out_path)])
+        from meo.tools.export import main
+        main()
+        content = out_path.read_text(encoding="utf-8-sig")
+        assert "THE BODY 京都店" in content
+
+    def test_no_answers_exits_0_with_helpful_message(self, capsys, _no_history, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["meo-export", "answers"])
+        from meo.tools.export import main
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        err = capsys.readouterr().err
+        assert "Q&A" in err

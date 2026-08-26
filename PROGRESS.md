@@ -1,6 +1,44 @@
 # PROGRESS
 
-## Status: All milestones complete — 1729/1729 tests green (100% coverage)
+## Status: All milestones complete — 1751/1751 tests green (100% coverage)
+
+---
+
+## Completed this run (run 89)
+
+### feat(export): add `meo-export answers` subcommand for Q&A answer history
+
+**Problem**: The Q&A auto-answer feature (run 82) archives every AI-generated
+answer into `state.json` via `record_answer_content()` / `get_answer_history()`,
+but `meo-export` had no `answers` subcommand to surface that archive as a CSV.
+This left the operator with no convenient way to audit what the tool posted as
+Q&A answers without inspecting `state.json` directly.
+
+**Fix**: Added `answers` as a fifth export type to `meo-export`, following the
+same pattern as the existing `replies` subcommand:
+
+- New `_ANSWER_FIELDS` fieldname list: `store_key`, `store_name`, `date`,
+  `question_id`, `question`, `answer`.
+- New `export_answers()` function that iterates `state.get_answer_history()`
+  across all (or a filtered) stores and returns CSV rows.
+- `main()` dispatch updated to route `answers` through `export_answers()` and
+  emit a dedicated "Q&A" message when no history is found (so the error message
+  matches the feature, not the generic "posts" message).
+- Argparse `choices` extended: `["posts", "replies", "answers", "held-reviews",
+  "score-history"]`.
+- Module docstring and usage examples updated to document the new subcommand.
+
+The `_no_history` fixture in `test_export.py` was extended to also patch
+`state.get_answer_history` so existing "no history" tests remain accurate.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/tools/export.py` | Add `_ANSWER_FIELDS`, `export_answers()`, `answers` choice in argparse, dispatch branch in `main()`, dedicated empty-answers message, docstring update |
+| `tests/test_export.py` | Add `_ANSWER_HISTORY_KYOTO` fixture data, `_patch_answer_history` fixture, `get_answer_history` patch in `_no_history`; new `TestExportAnswers` (5 tests) and `TestMainAnswers` (6 tests) classes |
+
+**Tests: +22 tests, 1729 → 1751, 100% coverage maintained.**
 
 ---
 

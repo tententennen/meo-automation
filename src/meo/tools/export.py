@@ -1,4 +1,4 @@
-"""meo-export — export post/reply history from state.json to CSV.
+"""meo-export — export post/reply/Q&A history from state.json to CSV.
 
 Reads the content archive written by the daily runner and outputs a
 UTF-8-BOM CSV suitable for opening in Excel or Google Sheets.
@@ -6,10 +6,12 @@ UTF-8-BOM CSV suitable for opening in Excel or Google Sheets.
 Usage:
     meo-export posts          [--store STORE_KEY] [--output FILE]
     meo-export replies        [--store STORE_KEY] [--output FILE]
+    meo-export answers        [--store STORE_KEY] [--output FILE]
     meo-export held-reviews   [--store STORE_KEY] [--output FILE]
     meo-export score-history  [--store STORE_KEY] [--output FILE]
     python -m meo.tools.export posts
     python -m meo.tools.export replies --store the_body_kyoto --output replies.csv
+    python -m meo.tools.export answers --output answers.csv
     python -m meo.tools.export held-reviews --output held.csv
     python -m meo.tools.export score-history --output grades.csv
 """
@@ -33,6 +35,7 @@ from .. import state
 
 _POST_FIELDS = ["store_key", "store_name", "date", "theme", "text", "post_name", "image_id", "image_name"]
 _REPLY_FIELDS = ["store_key", "store_name", "date", "reviewer", "stars", "review_id", "reply"]
+_ANSWER_FIELDS = ["store_key", "store_name", "date", "question_id", "question", "answer"]
 _HELD_FIELDS = ["store_key", "store_name", "date", "review_date", "review_id", "reviewer", "stars", "comment"]
 _SCORE_HISTORY_FIELDS = ["date", "store_key", "store_name", "grade"]
 
@@ -52,6 +55,23 @@ def export_posts(stores: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "post_name": entry.get("post_name", ""),
                 "image_id": entry.get("image_id", ""),
                 "image_name": entry.get("image_name", ""),
+            })
+    return rows
+
+
+def export_answers(stores: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Return CSV rows for the Q&A answer content archive across the given stores."""
+    rows: list[dict[str, str]] = []
+    for store in stores:
+        key = store["key"]
+        for entry in state.get_answer_history(key):
+            rows.append({
+                "store_key": key,
+                "store_name": store["name"],
+                "date": entry.get("date", ""),
+                "question_id": entry.get("question_id", ""),
+                "question": entry.get("question", ""),
+                "answer": entry.get("answer", ""),
             })
     return rows
 
@@ -157,10 +177,11 @@ def main() -> None:
     )
     parser.add_argument(
         "type",
-        choices=["posts", "replies", "held-reviews", "score-history"],
+        choices=["posts", "replies", "answers", "held-reviews", "score-history"],
         help=(
-            "Which history to export: 'posts', 'replies', 'held-reviews', or "
+            "Which history to export: 'posts', 'replies', 'answers', 'held-reviews', or "
             "'score-history'. "
+            "'answers' exports the AI-generated Q&A answer archive. "
             "'held-reviews' shows reviews currently awaiting manual reply. "
             "'score-history' exports the daily health-grade snapshots saved by "
             "meo-score (one row per date × store, newest first)."
@@ -205,6 +226,9 @@ def main() -> None:
     elif args.type == "replies":
         rows = export_replies(stores)
         fieldnames = _REPLY_FIELDS
+    elif args.type == "answers":
+        rows = export_answers(stores)
+        fieldnames = _ANSWER_FIELDS
     elif args.type == "held-reviews":
         rows = export_held_reviews(stores)
         fieldnames = _HELD_FIELDS
@@ -217,6 +241,12 @@ def main() -> None:
             print(
                 "No held reviews found. Either no reviews are below min_star_autoreply, "
                 "or the tool has not run in live mode yet.",
+                file=sys.stderr,
+            )
+        elif args.type == "answers":
+            print(
+                "No Q&A answer history found in state.json. "
+                "Run the tool at least once (live, not dry-run) to populate history.",
                 file=sys.stderr,
             )
         elif args.type == "score-history":
