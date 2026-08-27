@@ -30,6 +30,7 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "recent_reply_context_count",
     "post_time_window_jst",
     "max_drive_image_bytes",
+    "max_banned_retries",
 })
 
 _TIME_WINDOW_PATTERN = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
@@ -209,6 +210,15 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
             errors.append(
                 "content.yaml: defaults.max_drive_image_bytes must be a positive integer "
                 "(default: 5242880 = 5 MB, the GBP upload limit)"
+            )
+
+        max_banned_retries = defaults.get("max_banned_retries")
+        if max_banned_retries is not None and (
+            not isinstance(max_banned_retries, int) or max_banned_retries < 0
+        ):
+            errors.append(
+                "content.yaml: defaults.max_banned_retries must be an integer >= 0 "
+                "(0 = log warning only, no retry; default: 2)"
             )
 
     return errors

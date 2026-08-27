@@ -79,6 +79,7 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     banned_words_list = conf.get("banned_words", [])
     store_defaults = cfg.effective_defaults(store)
     max_chars = store_defaults["max_post_chars"]
+    max_banned_retries: int = store_defaults.get("max_banned_retries", 2)
     recent_count: int = store_defaults.get("recent_post_context_count", 3)
 
     system = (
@@ -135,17 +136,29 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
         f"投稿文のみを出力してください（説明文不要）。"
     )
 
-    text = _call_llm(user, conf["llm"], system=system)
-    text = text.strip()
-    if len(text) > max_chars:
-        text = text[:max_chars]
-    found = _check_banned_words(text, banned_words_list)
-    if found:
-        logger.warning(
-            "[%s] Generated post contains banned word(s): %s. "
-            "Adjust config/content.yaml banned_words or themes if this recurs.",
-            store.get("key", "?"), found,
-        )
+    store_key = store.get("key", "?")
+    total_attempts = max_banned_retries + 1
+    text = ""
+    for attempt in range(total_attempts):
+        text = _call_llm(user, conf["llm"], system=system)
+        text = text.strip()
+        if len(text) > max_chars:
+            text = text[:max_chars]
+        found = _check_banned_words(text, banned_words_list)
+        if not found:
+            return text
+        if attempt < max_banned_retries:
+            logger.warning(
+                "[%s] Generated post contains banned word(s) %s; regenerating "
+                "(attempt %d of %d).",
+                store_key, found, attempt + 1, total_attempts,
+            )
+        else:
+            logger.warning(
+                "[%s] Generated post still contains banned word(s) %s after %d attempt(s); "
+                "using final attempt's output. Adjust config/content.yaml banned_words or themes.",
+                store_key, found, total_attempts,
+            )
     return text
 
 
@@ -207,6 +220,7 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     banned_words_list = conf.get("banned_words", [])
     store_defaults = cfg.effective_defaults(store)
     max_chars = store_defaults["max_reply_chars"]
+    max_banned_retries: int = store_defaults.get("max_banned_retries", 2)
     recent_count: int = store_defaults.get("recent_reply_context_count", 3)
 
     raw_name = review.get("reviewer", {}).get("displayName", "")
@@ -264,17 +278,29 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
         f"返信文のみを出力してください（説明文不要）。"
     )
 
-    text = _call_llm(user, conf["llm"], system=system)
-    text = text.strip()
-    if len(text) > max_chars:
-        text = text[:max_chars]
-    found = _check_banned_words(text, banned_words_list)
-    if found:
-        logger.warning(
-            "[%s] Generated reply contains banned word(s): %s. "
-            "Adjust config/content.yaml banned_words if this recurs.",
-            store.get("key", "?"), found,
-        )
+    store_key = store.get("key", "?")
+    total_attempts = max_banned_retries + 1
+    text = ""
+    for attempt in range(total_attempts):
+        text = _call_llm(user, conf["llm"], system=system)
+        text = text.strip()
+        if len(text) > max_chars:
+            text = text[:max_chars]
+        found = _check_banned_words(text, banned_words_list)
+        if not found:
+            return text
+        if attempt < max_banned_retries:
+            logger.warning(
+                "[%s] Generated reply contains banned word(s) %s; regenerating "
+                "(attempt %d of %d).",
+                store_key, found, attempt + 1, total_attempts,
+            )
+        else:
+            logger.warning(
+                "[%s] Generated reply still contains banned word(s) %s after %d attempt(s); "
+                "using final attempt's output. Adjust config/content.yaml banned_words.",
+                store_key, found, total_attempts,
+            )
     return text
 
 
@@ -294,6 +320,7 @@ def generate_answer(question_text: str, store: dict[str, Any]) -> str:
     banned_words_list = conf.get("banned_words", [])
     store_defaults = cfg.effective_defaults(store)
     max_chars: int = store_defaults.get("max_answer_chars", 1000)
+    max_banned_retries: int = store_defaults.get("max_banned_retries", 2)
 
     date_context = _jst_date_context()
     banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
@@ -320,16 +347,28 @@ def generate_answer(question_text: str, store: dict[str, Any]) -> str:
         f"回答文のみを出力してください（説明文不要）。"
     )
 
-    text = _call_llm(user, conf["llm"], system=system)
-    text = text.strip()
-    if len(text) > max_chars:
-        text = text[:max_chars]
-    found = _check_banned_words(text, banned_words_list)
-    if found:
-        logger.warning(
-            "[%s] Generated Q&A answer contains banned word(s): %s. "
-            "Adjust config/content.yaml banned_words if this recurs.",
-            store.get("key", "?"), found,
-        )
+    store_key = store.get("key", "?")
+    total_attempts = max_banned_retries + 1
+    text = ""
+    for attempt in range(total_attempts):
+        text = _call_llm(user, conf["llm"], system=system)
+        text = text.strip()
+        if len(text) > max_chars:
+            text = text[:max_chars]
+        found = _check_banned_words(text, banned_words_list)
+        if not found:
+            return text
+        if attempt < max_banned_retries:
+            logger.warning(
+                "[%s] Generated Q&A answer contains banned word(s) %s; regenerating "
+                "(attempt %d of %d).",
+                store_key, found, attempt + 1, total_attempts,
+            )
+        else:
+            logger.warning(
+                "[%s] Generated Q&A answer still contains banned word(s) %s after %d attempt(s); "
+                "using final attempt's output. Adjust config/content.yaml banned_words.",
+                store_key, found, total_attempts,
+            )
     return text
 

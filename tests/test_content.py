@@ -1071,3 +1071,108 @@ def test_generate_reply_context_capped_at_recent_reply_context_count():
     assert "2. 「" in user_prompt
     assert "3. 「" in user_prompt
     assert "4. 「" not in user_prompt
+
+
+# ---------------------------------------------------------------------------
+# Banned-word regeneration retry tests (max_banned_retries)
+# ---------------------------------------------------------------------------
+
+# Store configured for exactly 1 extra retry (2 total attempts).
+_STORE_RETRY_1 = {**_STORE, "overrides": {"max_banned_retries": 1}}
+# Store configured for no retries (warn and return on first attempt).
+_STORE_RETRY_0 = {**_STORE, "overrides": {"max_banned_retries": 0}}
+
+
+def test_generate_post_retries_until_clean_text(caplog):
+    """When the LLM produces banned text then a clean result, the clean text is returned.
+
+    With max_banned_retries=1 (2 total attempts): first call returns banned text,
+    second call returns clean text → 2 LLM calls, clean text returned, one
+    "regenerating" warning logged for the first attempt.
+    """
+    import logging
+    responses = ["激安クーポン！", "春のキャンペーンをご案内します。"]
+    with patch("meo.content._call_llm", side_effect=responses) as mock_llm, \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_post(_STORE_RETRY_1)
+    assert mock_llm.call_count == 2
+    assert result == "春のキャンペーンをご案内します。"
+    assert any("regenerating" in r.message for r in caplog.records)
+    assert not any("still contains" in r.message for r in caplog.records)
+
+
+def test_generate_post_returns_after_max_retries_exhausted(caplog):
+    """When all attempts produce banned text, the final attempt's text is returned.
+
+    With max_banned_retries=1 (2 total attempts): both calls return banned text →
+    2 LLM calls, banned text returned, one "still contains" warning logged.
+    """
+    import logging
+    responses = ["激安！", "最安値！"]
+    with patch("meo.content._call_llm", side_effect=responses) as mock_llm, \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_post(_STORE_RETRY_1)
+    assert mock_llm.call_count == 2
+    assert result == "最安値！"
+    assert any("still contains" in r.message for r in caplog.records)
+
+
+def test_generate_post_no_retry_when_no_banned_word():
+    """When the first attempt is clean, only one LLM call is made regardless of max_banned_retries."""
+    with patch("meo.content._call_llm", return_value="清潔な投稿文です。") as mock_llm:
+        result = content.generate_post(_STORE_RETRY_1)
+    assert mock_llm.call_count == 1
+    assert result == "清潔な投稿文です。"
+
+
+def test_generate_post_retry_zero_warns_still_contains_on_single_attempt(caplog):
+    """max_banned_retries=0 makes 1 attempt; if banned word found, log 'still contains' (not 'regenerating')."""
+    import logging
+    with patch("meo.content._call_llm", return_value="激安！") as mock_llm, \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        content.generate_post(_STORE_RETRY_0)
+    assert mock_llm.call_count == 1
+    assert any("still contains" in r.message for r in caplog.records)
+    assert not any("regenerating" in r.message for r in caplog.records)
+
+
+def test_generate_reply_retries_until_clean_text():
+    """generate_reply() retries when the LLM initially produces a banned word."""
+    responses = ["激安サービス！", "ご来店ありがとうございます。"]
+    with patch("meo.content._call_llm", side_effect=responses) as mock_llm:
+        result = content.generate_reply(_REVIEW, _STORE_RETRY_1)
+    assert mock_llm.call_count == 2
+    assert result == "ご来店ありがとうございます。"
+
+
+def test_generate_reply_returns_after_max_retries_exhausted(caplog):
+    """generate_reply() returns banned text after exhausting all retries."""
+    import logging
+    responses = ["激安！", "最安値！"]
+    with patch("meo.content._call_llm", side_effect=responses) as mock_llm, \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_reply(_REVIEW, _STORE_RETRY_1)
+    assert mock_llm.call_count == 2
+    assert result == "最安値！"
+    assert any("still contains" in r.message for r in caplog.records)
+
+
+def test_generate_answer_retries_until_clean_text():
+    """generate_answer() retries when the LLM initially produces a banned word."""
+    responses = ["激安です！", "ご質問ありがとうございます。詳細はお問い合わせください。"]
+    with patch("meo.content._call_llm", side_effect=responses) as mock_llm:
+        result = content.generate_answer("営業時間は何時ですか？", _STORE_RETRY_1)
+    assert mock_llm.call_count == 2
+    assert result == "ご質問ありがとうございます。詳細はお問い合わせください。"
+
+
+def test_generate_answer_returns_after_max_retries_exhausted(caplog):
+    """generate_answer() returns banned text after exhausting all retries."""
+    import logging
+    responses = ["激安！", "最安値保証！"]
+    with patch("meo.content._call_llm", side_effect=responses) as mock_llm, \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_answer("料金は？", _STORE_RETRY_1)
+    assert mock_llm.call_count == 2
+    assert result == "最安値保証！"
+    assert any("still contains" in r.message for r in caplog.records)

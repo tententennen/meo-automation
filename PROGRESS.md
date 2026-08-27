@@ -1,6 +1,38 @@
 # PROGRESS
 
-## Status: All milestones complete — 1751/1751 tests green (100% coverage)
+## Status: All milestones complete — 1765/1765 tests green (100% coverage)
+
+---
+
+## Completed this run (run 90)
+
+### feat(content): banned-word regeneration retry (`max_banned_retries`)
+
+**Problem**: When the LLM generated text containing banned words (e.g. "激安",
+"100%保証"), `generate_post()` / `generate_reply()` / `generate_answer()` only
+logged a WARNING and returned the non-compliant text unchanged. The `banned_words`
+list in `config/content.yaml` was therefore advisory-only: the post would go live
+with content the operator explicitly wanted to avoid, with no automatic remediation.
+
+**Fix**: Added a `max_banned_retries` config key (default `2`, meaning 3 total
+LLM attempts) that makes the generator retry the LLM call when banned words are
+detected. On each retry the same prompt is re-sent — the LLM's inherent randomness
+(temperature 0.8) produces different output. If all attempts are exhausted, the
+final attempt's text is returned (with a clear "still contains" WARNING) so the
+post is never silently blocked. Setting `max_banned_retries: 0` restores the
+previous warn-only, single-attempt behaviour.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `config/content.yaml` | Added `max_banned_retries: 2` to defaults |
+| `src/meo/validator.py` | Added `max_banned_retries` to `_ALLOWED_OVERRIDE_KEYS`; validate non-negative integer in `validate_content()` |
+| `src/meo/content.py` | `generate_post`, `generate_reply`, `generate_answer`: replaced single `_call_llm` call with a retry loop; distinct "regenerating (attempt N of M)" and "still contains … after N attempt(s)" warnings |
+| `tests/test_content.py` | 8 new tests covering post/reply/answer retry-to-clean, exhausted-retries, zero-retry, and no-retry-when-clean |
+| `tests/test_validator.py` | 6 new tests: absent/positive/zero valid; negative/float invalid; store override accepted |
+
+**Tests: +14 tests, 1751 → 1765, 100% coverage maintained.**
 
 ---
 

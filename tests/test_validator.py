@@ -647,3 +647,56 @@ def test_validate_stores_max_drive_image_bytes_is_allowed_override():
     }
     errors = v.validate_stores(stores)
     assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# validate_content — max_banned_retries
+# ---------------------------------------------------------------------------
+
+def _content_with_max_banned_retries(value):
+    base = _VALID_CONTENT.copy()
+    base["defaults"] = {**base["defaults"], "max_banned_retries": value}
+    return base
+
+
+def test_validate_content_max_banned_retries_absent_is_valid():
+    """max_banned_retries is optional; omitting it is valid (defaults to 2)."""
+    errors = v.validate_content(_VALID_CONTENT)
+    assert not any("max_banned_retries" in e for e in errors)
+
+
+def test_validate_content_max_banned_retries_positive_is_valid():
+    errors = v.validate_content(_content_with_max_banned_retries(2))
+    assert not any("max_banned_retries" in e for e in errors)
+
+
+def test_validate_content_max_banned_retries_zero_is_valid():
+    """0 is allowed — means 'warn but do not retry'."""
+    errors = v.validate_content(_content_with_max_banned_retries(0))
+    assert not any("max_banned_retries" in e for e in errors)
+
+
+def test_validate_content_max_banned_retries_negative_is_invalid():
+    errors = v.validate_content(_content_with_max_banned_retries(-1))
+    assert any("max_banned_retries" in e for e in errors)
+
+
+def test_validate_content_max_banned_retries_float_is_invalid():
+    errors = v.validate_content(_content_with_max_banned_retries(1.5))
+    assert any("max_banned_retries" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# validate_stores — max_banned_retries override
+# ---------------------------------------------------------------------------
+
+def test_validate_stores_max_banned_retries_is_allowed_override():
+    """max_banned_retries is accepted as a per-store override key."""
+    stores = {
+        "store_a": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"max_banned_retries": 0},
+        }
+    }
+    errors = v.validate_stores(stores)
+    assert errors == []
