@@ -6734,3 +6734,70 @@ Needs Human Action section above). After API access is granted:
 5. Run `meo-run` live → first real post + replies + Q&A
 6. After first live run, check `meo-score-history` — should show today's grades
 7. Check Slack (if configured) — message should now show Q&A: N alongside replies
+
+---
+
+## Run 86 — 2026-08-28
+
+### What was done
+
+Added `meo-rating-alert` — a new automated alert that fires when any store's
+average reply star-rating drops significantly period-over-period.
+
+#### 1. `src/meo/tools/rating_alert.py` — new tool
+
+Compares the mean star rating of replied reviews in a configurable window
+(default: last 14 days) against the previous window of equal length.
+Fires a Slack alert when:
+- The drop between periods is ≥ `--min-drop` (default: 0.5 stars)
+- AND the current window has at least `--min-replies` (default: 3) replies,
+  avoiding false alarms from thin data
+
+Output includes: current vs previous avg, reply counts for both windows,
+star distribution for the current window, and the date ranges compared.
+
+Reads `reply_history` from `logs/state.json` — **no Google credentials needed**.
+
+CLI options:
+- `--window-days N`   — size of each comparison window (default: 14)
+- `--min-drop STARS`  — minimum drop to trigger alert (default: 0.5)
+- `--min-replies N`   — minimum current-window replies required (default: 3)
+- `--dry-run`         — print without sending to Slack
+- `--store KEY [...]` — limit to specific store(s)
+
+Exit 0 = no significant declines; Exit 1 = alert fired.
+
+#### 2. `.github/workflows/daily_run.yml` — new CI step
+
+Added "Alert on declining star ratings" after the error-alert step.
+Runs `python -m meo.tools.rating_alert || true` on every daily run
+so the owner is notified automatically via Slack when a store's reputation
+is trending down — without needing to check `meo-trend` manually.
+
+#### 3. `pyproject.toml` — new entry point
+
+`meo-rating-alert = "meo.tools.rating_alert:main"` registered.
+
+#### Tests
+
+46 new tests in `tests/test_rating_alert.py` (1811 total, up from 1765):
+- `TestStarValue` — star-string to int mapping
+- `TestAvgStars` — average calculation, None for empty/invalid
+- `TestWindowEntries` — date-range filtering with boundary and invalid-date cases
+- `TestRunRatingAlert` — decline detection, stable guard, thin-data guard,
+  min-drop guard, multi-store isolation, custom window, correct date ranges
+- `TestFormatAlert` — message content, store count, distribution, window label
+- `TestSendAlert` — Slack POST success, HTTP error, connection error, no URL
+- `TestMain` — exit codes, dry-run skip, live send, store filter, invalid args
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+6. After first live run, check `meo-score-history` — should show today's grades
+7. Check Slack (if configured) — daily message + rating-alert if any store drops

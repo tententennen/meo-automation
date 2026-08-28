@@ -153,6 +153,18 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m meo.tools.error_alert || true
 
+      # Alert when any store's average reply star-rating has dropped significantly
+      # (>= 0.5 stars) over the last 14 days vs the previous 14 days.  Reads
+      # only state.json — no Google credentials needed.  Exits 0 when no decline
+      # detected; exits 1 when at least one store triggers (Slack alert sent).
+      # continue-on-error keeps this step non-fatal so state-save always runs.
+      - name: Alert on declining star ratings
+        if: always()
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m meo.tools.rating_alert || true
+
       # Save state after the run so the next run's duplicate guard has context.
       # continue-on-error: true guards against the first-ever run where state.json
       # may not exist (e.g., dry-run with no stores configured).
