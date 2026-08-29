@@ -700,3 +700,56 @@ def test_validate_stores_max_banned_retries_is_allowed_override():
     }
     errors = v.validate_stores(stores)
     assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# validate_content — holiday_context_days
+# ---------------------------------------------------------------------------
+
+def _content_with_holiday_context_days(value):
+    base = _VALID_CONTENT.copy()
+    base["defaults"] = {**base["defaults"], "holiday_context_days": value}
+    return base
+
+
+def test_validate_content_holiday_context_days_absent_is_valid():
+    """holiday_context_days is optional; omitting it is valid (defaults to 7)."""
+    errors = v.validate_content(_VALID_CONTENT)
+    assert not any("holiday_context_days" in e for e in errors)
+
+
+def test_validate_content_holiday_context_days_positive_is_valid():
+    errors = v.validate_content(_content_with_holiday_context_days(14))
+    assert not any("holiday_context_days" in e for e in errors)
+
+
+def test_validate_content_holiday_context_days_zero_is_valid():
+    """0 disables holiday injection; it is an allowed value."""
+    errors = v.validate_content(_content_with_holiday_context_days(0))
+    assert not any("holiday_context_days" in e for e in errors)
+
+
+def test_validate_content_holiday_context_days_negative_is_invalid():
+    errors = v.validate_content(_content_with_holiday_context_days(-1))
+    assert any("holiday_context_days" in e for e in errors)
+
+
+def test_validate_content_holiday_context_days_float_is_invalid():
+    errors = v.validate_content(_content_with_holiday_context_days(7.5))
+    assert any("holiday_context_days" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# validate_stores — holiday_context_days override
+# ---------------------------------------------------------------------------
+
+def test_validate_stores_holiday_context_days_is_allowed_override():
+    """holiday_context_days is accepted as a per-store override key."""
+    stores = {
+        "store_a": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"holiday_context_days": 0},
+        }
+    }
+    errors = v.validate_stores(stores)
+    assert errors == []

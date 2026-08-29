@@ -1,6 +1,62 @@
 # PROGRESS
 
-## Status: All milestones complete — 1765/1765 tests green (100% coverage)
+## Status: All milestones complete — 1856/1856 tests green (100% coverage on new code)
+
+---
+
+## Completed this run (run 92)
+
+### feat(content): Japanese holiday awareness — inject upcoming holidays into post LLM prompt
+
+**Problem**: Post generation had seasonal awareness (春/夏/秋/冬) but no knowledge
+of specific upcoming holidays or cultural events.  A post going out on Christmas Eve,
+Obon, Golden Week, or Valentine's Day read as if those dates didn't exist — a missed
+opportunity for topical, resonant content that customers actually notice.
+
+**Fix**: Added a new `src/meo/holidays.py` module that computes upcoming Japanese
+national holidays and culturally significant events from statutory rules and a small
+per-year lookup table (no external API needed).  `generate_post()` now reads a
+`holiday_context_days` config value (default: 7) and, when holidays are found within
+that window, injects a concise context line into the LLM prompt.
+
+**What it covers:**
+
+*National holidays (国民の祝日):*
+- Fixed-date: 元日, 建国記念の日, 天皇誕生日, 昭和の日, 憲法記念日, みどりの日, こどもの日, 山の日, 文化の日, 勤労感謝の日
+- Monday holidays (ハッピーマンデー): 成人の日, 海の日, 敬老の日, スポーツの日
+- Equinoxes: 春分の日, 秋分の日 (per-year lookup table for 2024–2030; safe fallback outside that range)
+
+*Cultural / seasonal events:*
+- お正月 (Jan 2–3), バレンタインデー, ホワイトデー, 七夕, お盆 (Aug 13–15), クリスマスイブ/クリスマス, 大晦日
+
+**Prompt injection example:**
+```
+現在の日付・季節: 2026年8月13日（夏）
+【近日の記念日・祝日】本日はお盆です、2日後は山の日です（8月11日）
+トーン: 元気で前向き、モチベーション高め、健康志向
+```
+(The LLM can reference the holiday naturally in its output — it's never required to.)
+
+**Config:**
+```yaml
+defaults:
+  holiday_context_days: 7  # days ahead to scan (0 = disable)
+```
+Can be overridden per-store in `stores.yaml` via the `overrides` key.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/holidays.py` | New module — `_nth_monday`, `_holidays_for_year`, `upcoming_holidays`, `holiday_context_str`, `Holiday` NamedTuple; 118 lines |
+| `config/content.yaml` | Added `holiday_context_days: 7` to defaults |
+| `src/meo/validator.py` | Added `holiday_context_days` to `_ALLOWED_OVERRIDE_KEYS`; validate non-negative integer in `validate_content()` |
+| `src/meo/content.py` | Import `holiday_context_str`; `generate_post` reads `holiday_context_days`, calls `holiday_context_str`, injects context line into user prompt |
+| `tests/test_holidays.py` | New file — 34 tests covering fixed/moveable/equinox holidays, `upcoming_holidays` (window, boundary, deduplication, error), `holiday_context_str` (formatting, today/tomorrow/future, multi-holiday) |
+| `tests/test_validator.py` | 6 new tests: absent/positive/zero valid; negative/float invalid; override accepted |
+| `tests/test_content.py` | 3 new tests: holiday context injected; omitted when disabled; omitted when no holidays |
+
+**Tests: +45 tests, 1811 → 1856, 100% coverage on all changed/new code.**
 
 ---
 

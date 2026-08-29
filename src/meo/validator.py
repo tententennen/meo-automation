@@ -31,6 +31,7 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "post_time_window_jst",
     "max_drive_image_bytes",
     "max_banned_retries",
+    "holiday_context_days",
 })
 
 _TIME_WINDOW_PATTERN = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
@@ -219,6 +220,15 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
             errors.append(
                 "content.yaml: defaults.max_banned_retries must be an integer >= 0 "
                 "(0 = log warning only, no retry; default: 2)"
+            )
+
+        holiday_context_days = defaults.get("holiday_context_days")
+        if holiday_context_days is not None and (
+            not isinstance(holiday_context_days, int) or holiday_context_days < 0
+        ):
+            errors.append(
+                "content.yaml: defaults.holiday_context_days must be an integer >= 0 "
+                "(0 = disable holiday injection; default: 7)"
             )
 
     return errors

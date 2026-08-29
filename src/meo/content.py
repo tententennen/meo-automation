@@ -20,6 +20,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import config as cfg
+from .holidays import holiday_context_str
 from .llm import _call_llm, _call_anthropic, _call_openai, _call_with_retry
 from .state import get_post_history, get_reply_history
 
@@ -81,6 +82,7 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     max_chars = store_defaults["max_post_chars"]
     max_banned_retries: int = store_defaults.get("max_banned_retries", 2)
     recent_count: int = store_defaults.get("recent_post_context_count", 3)
+    holiday_days: int = store_defaults.get("holiday_context_days", 7)
 
     system = (
         f"あなたはGoogleビジネスプロフィールの投稿文を書くプロのコピーライターです。"
@@ -89,6 +91,12 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     )
 
     date_context = _jst_date_context()
+
+    holiday_line = ""
+    if holiday_days > 0:
+        ctx = holiday_context_str(holiday_days)
+        if ctx:
+            holiday_line = ctx + "\n"
 
     if forced_theme:
         theme_line = f"テーマ: {forced_theme}"
@@ -122,6 +130,7 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     user = (
         f"店舗名: {store['name']}\n"
         f"現在の日付・季節: {date_context}\n"
+        f"{holiday_line}"
         f"トーン: {tone_profile['tone']}\n"
         f"{theme_line}\n"
         f"{banned_line}"

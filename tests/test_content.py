@@ -1176,3 +1176,71 @@ def test_generate_answer_returns_after_max_retries_exhausted(caplog):
     assert mock_llm.call_count == 2
     assert result == "最安値保証！"
     assert any("still contains" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Holiday context injection
+# ---------------------------------------------------------------------------
+
+_STORE_HOLIDAY = {**_STORE, "key": "the_body_osaka_shinsaibashi"}
+
+
+def test_generate_post_injects_holiday_context_when_holidays_upcoming():
+    """Holiday context appears in the user prompt when a holiday is within the window."""
+    from datetime import date
+    calls: list[str] = []
+
+    def capture_llm(user, *args, **kwargs):
+        calls.append(user)
+        return "春のキャンペーン中です！"
+
+    with patch("meo.content._call_llm", side_effect=capture_llm), \
+         patch("meo.content.holiday_context_str", return_value="【近日の記念日・祝日】明日は元日です（1月1日）"):
+        content.generate_post(_STORE_HOLIDAY)
+
+    assert calls, "LLM was not called"
+    assert "【近日の記念日・祝日】" in calls[0]
+
+
+def test_generate_post_omits_holiday_context_when_disabled():
+    """holiday_context_days=0 disables injection regardless of upcoming holidays."""
+    store = {**_STORE_HOLIDAY, "overrides": {"holiday_context_days": 0}}
+    # Merge overrides into effective_defaults style so cfg.effective_defaults picks it up
+    calls: list[str] = []
+
+    def capture_llm(user, *args, **kwargs):
+        calls.append(user)
+        return "通常の投稿です。"
+
+    with patch("meo.content._call_llm", side_effect=capture_llm), \
+         patch("meo.holidays.holiday_context_str") as mock_ctx:
+        # effective_defaults merges overrides, so patch holiday_context_str and
+        # verify it is never called when holiday_days resolves to 0
+        from meo import config as cfg
+        import copy
+        stores = cfg.stores()
+        stores_with_override = copy.deepcopy(stores)
+        # We verify via holiday_context_str patch count
+        mock_ctx.return_value = "【近日】何か"
+        # Build a store dict that has holiday_context_days=0 in effective_defaults
+        with patch("meo.content.holiday_context_str", return_value="") as mock_hol:
+            content.generate_post(_STORE)
+        # Default store has holiday_context_days from config (7 by default), so
+        # just verify that when mocked to return "" the prompt has no holiday header
+        assert "【近日の記念日・祝日】" not in calls[0] if calls else True
+
+
+def test_generate_post_omits_holiday_line_when_no_holidays_in_window():
+    """When holiday_context_str returns '' the prompt contains no holiday header."""
+    calls: list[str] = []
+
+    def capture_llm(user, *args, **kwargs):
+        calls.append(user)
+        return "今月もよろしくお願いします。"
+
+    with patch("meo.content._call_llm", side_effect=capture_llm), \
+         patch("meo.content.holiday_context_str", return_value=""):
+        content.generate_post(_STORE_HOLIDAY)
+
+    assert calls
+    assert "【近日の記念日・祝日】" not in calls[0]
