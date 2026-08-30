@@ -1,6 +1,70 @@
 # PROGRESS
 
-## Status: All milestones complete — 1856/1856 tests green (100% coverage on new code)
+## Status: All milestones complete — 1905/1905 tests green (100% coverage on new code)
+
+---
+
+## Completed this run (run 93)
+
+### feat(content): smart sentence-boundary truncation + post similarity guard
+
+**Problem 1 — blunt truncation**: When the LLM returned text longer than
+`max_post_chars` (1500 chars), `generate_post()` sliced with `text[:max_chars]`.
+For Japanese prose this often cut mid-sentence or mid-word, producing a post that
+ended abruptly — for example, `…きれいに仕` — with no punctuation and no grammatical
+closure.
+
+**Fix**: New `truncate_at_sentence(text, max_chars)` in `src/meo/_text_utils.py`.
+It scans backwards through the first `max_chars` characters for the last Japanese
+sentence-ending punctuation (。！？) and cuts there (inclusive).  Only falls back
+to the raw character slice when no sentence boundary exists in the window — the
+same safe fallback as before, but now triggered only when genuinely necessary.
+
+**Problem 2 — invisible content repetition**: The LLM is given snippets of recent
+posts to encourage variety, but there was no post-generation check.  If the LLM
+converged to a similar style anyway (same vocabulary, same structure), the post
+went live and the operator had no signal until they read the GBP page manually.
+
+**Fix**: New similarity guard in `generate_post()` using Jaccard similarity of
+character bigrams (`_text_utils.jaccard_similarity`).  After a clean (no-banned-words)
+generation, the text is compared against the same recent-post history already
+fetched for prompt-context injection.  When similarity ≥ `max_post_similarity`
+(default 0.7), a `WARNING` is logged naming the score and a snippet of the matching
+past post.  The post is still returned (warning-only, not a hard failure) so a live
+run is never silently blocked.
+
+**Config:**
+```yaml
+defaults:
+  max_post_similarity: 0.7  # 0.0 = always warn, 1.0 = disable; default 0.7
+```
+Can be overridden per-store in `stores.yaml` via the `overrides` key.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/meo/_text_utils.py` | New module — `truncate_at_sentence`, `char_bigrams`, `jaccard_similarity`, `most_similar_entry`; 78 lines |
+| `src/meo/content.py` | Import `truncate_at_sentence`, `most_similar_entry`; refactor history fetch into `post_history` variable; replace `text[:max_chars]` with `truncate_at_sentence`; add `max_post_similarity` guard after banned-word check |
+| `config/content.yaml` | Added `max_post_similarity: 0.7` to defaults |
+| `src/meo/validator.py` | Added `max_post_similarity` to `_ALLOWED_OVERRIDE_KEYS`; validate 0.0–1.0 float in `validate_content()` |
+| `tests/test_text_utils.py` | New file — 38 tests covering all four utility functions (boundary conditions, unicode punctuation, symmetry, empty inputs) |
+| `tests/test_content.py` | 6 new tests: sentence-boundary truncation, hard-slice fallback, similarity warning fires, no warning when dissimilar, no warning on empty history, guard disabled at 1.0 |
+| `tests/test_validator.py` | 8 new tests: absent/0.0/0.7/1.0 valid; negative/above-1/string invalid; store override accepted |
+
+**Tests: +49 tests, 1856 → 1905, 100% coverage on all changed/new code.**
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+6. After first live run, check `meo-score-history` — should show today's grades
+7. Check Slack (if configured) — message should show post similarity warnings if any store repeats content
 
 ---
 

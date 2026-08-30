@@ -1244,3 +1244,105 @@ def test_generate_post_omits_holiday_line_when_no_holidays_in_window():
 
     assert calls
     assert "【近日の記念日・祝日】" not in calls[0]
+
+
+# ---------------------------------------------------------------------------
+# Smart sentence-boundary truncation
+# ---------------------------------------------------------------------------
+
+def test_generate_post_truncates_at_sentence_boundary():
+    """When LLM output exceeds max_post_chars, text is cut at the last 。before the limit."""
+    # Produce text that exceeds the 1500-char limit and has a clear sentence boundary.
+    sentence_a = "春のキャンペーン開催中です。" * 50   # well over 1500 chars with 。 boundaries
+    with _mock_llm(sentence_a), \
+         patch("meo.content.get_post_history", return_value=[]), \
+         patch("meo.content.holiday_context_str", return_value=""):
+        result = content.generate_post(_STORE)
+    max_chars = cfg.content()["defaults"]["max_post_chars"]
+    assert len(result) <= max_chars
+    assert result.endswith("。")
+
+
+def test_generate_post_truncation_falls_back_to_hard_slice_when_no_sentence_end():
+    """When there is no 。！？ before max_post_chars, falls back to a character slice."""
+    # A long string of characters with no sentence-ending punctuation
+    no_boundary = "あ" * 9999
+    with _mock_llm(no_boundary), \
+         patch("meo.content.get_post_history", return_value=[]), \
+         patch("meo.content.holiday_context_str", return_value=""):
+        result = content.generate_post(_STORE)
+    max_chars = cfg.content()["defaults"]["max_post_chars"]
+    assert len(result) == max_chars
+    assert all(c == "あ" for c in result)
+
+
+# ---------------------------------------------------------------------------
+# Post similarity guard
+# ---------------------------------------------------------------------------
+
+def test_generate_post_warns_when_similar_to_recent(caplog):
+    """A WARNING is logged when the generated post is >= max_post_similarity to a recent post."""
+    past_text = "今週のおすすめメニューをご紹介します。ぜひお越しください。"
+    # Return a text that is near-identical to the past post
+    generated = "今週のおすすめメニューをご紹介します。ぜひいらしてください。"
+
+    import logging
+    with _mock_llm(generated), \
+         patch("meo.content.get_post_history", return_value=[{"text": past_text}]), \
+         patch("meo.content.holiday_context_str", return_value=""), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        content.generate_post(_STORE)
+
+    assert any("similar" in r.message for r in caplog.records), (
+        "Expected a similarity warning in the log"
+    )
+
+
+def test_generate_post_no_warning_when_dissimilar(caplog):
+    """No similarity warning when the generated post is clearly different from recent posts."""
+    past_text = "全く異なる文章です。まったく関係のない内容。"
+    generated = "春のスタッフおすすめを紹介します！季節のケアで輝く肌へ。"
+
+    import logging
+    with _mock_llm(generated), \
+         patch("meo.content.get_post_history", return_value=[{"text": past_text}]), \
+         patch("meo.content.holiday_context_str", return_value=""), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        content.generate_post(_STORE)
+
+    assert not any("similar" in r.message for r in caplog.records)
+
+
+def test_generate_post_no_similarity_check_when_history_empty(caplog):
+    """No similarity warning when post_history is empty (first run)."""
+    import logging
+    with _mock_llm("新しい投稿です。"), \
+         patch("meo.content.get_post_history", return_value=[]), \
+         patch("meo.content.holiday_context_str", return_value=""), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        content.generate_post(_STORE)
+
+    assert not any("similar" in r.message for r in caplog.records)
+
+
+def test_generate_post_similarity_disabled_when_threshold_is_one(caplog):
+    """max_post_similarity=1.0 disables the guard — no warning even for identical text."""
+    identical = "今週のおすすめメニューをご紹介します。"
+
+    import logging
+    from meo import config as cfg
+    original_defaults = cfg.effective_defaults
+
+    def fake_defaults(store):
+        d = original_defaults(store)
+        d["max_post_similarity"] = 1.0
+        return d
+
+    with _mock_llm(identical), \
+         patch("meo.content.get_post_history", return_value=[{"text": identical}]), \
+         patch("meo.content.holiday_context_str", return_value=""), \
+         patch("meo.content.cfg.effective_defaults", side_effect=fake_defaults), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        content.generate_post(_STORE)
+
+    assert not any("similar" in r.message for r in caplog.records)

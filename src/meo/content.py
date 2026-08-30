@@ -20,6 +20,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import config as cfg
+from ._text_utils import truncate_at_sentence, most_similar_entry
 from .holidays import holiday_context_str
 from .llm import _call_llm, _call_anthropic, _call_openai, _call_with_retry
 from .state import get_post_history, get_reply_history
@@ -109,23 +110,26 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     # ("禁止ワード: ") is misleading and adds no useful signal to the LLM.
     banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
 
-    # Inject snippets of recent posts so the LLM actively diversifies sentence
-    # structure, vocabulary, and angle rather than converging to a single style.
-    # recent_post_context_count=0 disables this (useful for first-run testing).
+    # Fetch post history once — used for prompt context injection and post
+    # similarity guard (max_post_similarity).
+    # recent_post_context_count=0 disables context injection but still allows
+    # the similarity guard to run (an empty list simply disables both).
+    post_history: list[dict] = (
+        get_post_history(store["key"])[:recent_count] if recent_count > 0 else []
+    )
+
     recent_context_line = ""
-    if recent_count > 0:
-        history = get_post_history(store["key"])[:recent_count]
-        if history:
-            snippets = []
-            for i, entry in enumerate(history, 1):
-                text = entry.get("text", "")
-                snippet = text[:60] + "…" if len(text) > 60 else text
-                snippets.append(f"{i}. 「{snippet}」")
-            recent_context_line = (
-                "最近の投稿（同じ文体・構成・表現の繰り返しを避けてください）:\n"
-                + "\n".join(snippets)
-                + "\n"
-            )
+    if post_history:
+        snippets = []
+        for i, entry in enumerate(post_history, 1):
+            text = entry.get("text", "")
+            snippet = text[:60] + "…" if len(text) > 60 else text
+            snippets.append(f"{i}. 「{snippet}」")
+        recent_context_line = (
+            "最近の投稿（同じ文体・構成・表現の繰り返しを避けてください）:\n"
+            + "\n".join(snippets)
+            + "\n"
+        )
 
     user = (
         f"店舗名: {store['name']}\n"
@@ -146,15 +150,24 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     )
 
     store_key = store.get("key", "?")
+    max_similarity: float = store_defaults.get("max_post_similarity", 0.7)
     total_attempts = max_banned_retries + 1
     text = ""
     for attempt in range(total_attempts):
         text = _call_llm(user, conf["llm"], system=system)
         text = text.strip()
-        if len(text) > max_chars:
-            text = text[:max_chars]
+        text = truncate_at_sentence(text, max_chars)
         found = _check_banned_words(text, banned_words_list)
         if not found:
+            if max_similarity < 1.0 and post_history:
+                sim, snippet = most_similar_entry(text, post_history)
+                if sim >= max_similarity:
+                    logger.warning(
+                        "[%s] Generated post is %.0f%% similar to a recent post "
+                        "(「%s…」); themes or vocabulary may be repeating. "
+                        "Consider expanding config/content.yaml themes.",
+                        store_key, sim * 100, snippet,
+                    )
             return text
         if attempt < max_banned_retries:
             logger.warning(

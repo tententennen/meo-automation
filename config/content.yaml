@@ -18,6 +18,7 @@ defaults:
   max_drive_image_bytes: 5242880    # skip Drive images larger than this (bytes); default = 5 MB (GBP upload limit)
   max_banned_retries: 2             # max extra LLM calls when generated text contains banned words (0 = warn only, no retry)
   holiday_context_days: 7           # days ahead to scan for Japanese holidays/events to inject into the post LLM prompt (0 = disable)
+  max_post_similarity: 0.7          # warn when generated post is ≥ this similar (Jaccard bigram) to recent posts (0.0 = always warn, 1.0 = disable)
 
 # Industry-specific tone profiles (used in the LLM prompt)
 industry_tones:

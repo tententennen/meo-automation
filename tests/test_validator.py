@@ -753,3 +753,63 @@ def test_validate_stores_holiday_context_days_is_allowed_override():
     }
     errors = v.validate_stores(stores)
     assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# max_post_similarity validation
+# ---------------------------------------------------------------------------
+
+def test_validate_content_max_post_similarity_absent_is_valid():
+    """Omitting max_post_similarity uses the built-in default — no error."""
+    assert v.validate_content(_VALID_CONTENT) == []
+
+
+def test_validate_content_max_post_similarity_zero_is_valid():
+    """max_post_similarity=0.0 means always warn — valid."""
+    content = {**_VALID_CONTENT, "defaults": {**_VALID_CONTENT["defaults"], "max_post_similarity": 0.0}}
+    assert v.validate_content(content) == []
+
+
+def test_validate_content_max_post_similarity_one_is_valid():
+    """max_post_similarity=1.0 disables the guard — valid."""
+    content = {**_VALID_CONTENT, "defaults": {**_VALID_CONTENT["defaults"], "max_post_similarity": 1.0}}
+    assert v.validate_content(content) == []
+
+
+def test_validate_content_max_post_similarity_midrange_is_valid():
+    """max_post_similarity=0.7 (the default) is valid."""
+    content = {**_VALID_CONTENT, "defaults": {**_VALID_CONTENT["defaults"], "max_post_similarity": 0.7}}
+    assert v.validate_content(content) == []
+
+
+def test_validate_content_max_post_similarity_negative_is_invalid():
+    """max_post_similarity < 0.0 is rejected."""
+    content = {**_VALID_CONTENT, "defaults": {**_VALID_CONTENT["defaults"], "max_post_similarity": -0.1}}
+    errors = v.validate_content(content)
+    assert any("max_post_similarity" in e for e in errors)
+
+
+def test_validate_content_max_post_similarity_above_one_is_invalid():
+    """max_post_similarity > 1.0 is rejected."""
+    content = {**_VALID_CONTENT, "defaults": {**_VALID_CONTENT["defaults"], "max_post_similarity": 1.1}}
+    errors = v.validate_content(content)
+    assert any("max_post_similarity" in e for e in errors)
+
+
+def test_validate_content_max_post_similarity_string_is_invalid():
+    """A string value for max_post_similarity is rejected."""
+    content = {**_VALID_CONTENT, "defaults": {**_VALID_CONTENT["defaults"], "max_post_similarity": "high"}}
+    errors = v.validate_content(content)
+    assert any("max_post_similarity" in e for e in errors)
+
+
+def test_validate_stores_max_post_similarity_is_allowed_override():
+    """max_post_similarity is accepted as a per-store override key."""
+    stores = {
+        "store_a": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"max_post_similarity": 0.8},
+        }
+    }
+    errors = v.validate_stores(stores)
+    assert errors == []

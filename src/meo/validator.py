@@ -32,6 +32,7 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "max_drive_image_bytes",
     "max_banned_retries",
     "holiday_context_days",
+    "max_post_similarity",
 })
 
 _TIME_WINDOW_PATTERN = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
@@ -229,6 +230,16 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
             errors.append(
                 "content.yaml: defaults.holiday_context_days must be an integer >= 0 "
                 "(0 = disable holiday injection; default: 7)"
+            )
+
+        max_post_similarity = defaults.get("max_post_similarity")
+        if max_post_similarity is not None and (
+            not isinstance(max_post_similarity, (int, float))
+            or not (0.0 <= max_post_similarity <= 1.0)
+        ):
+            errors.append(
+                "content.yaml: defaults.max_post_similarity must be a number between "
+                "0.0 and 1.0 inclusive (0.0 = always warn, 1.0 = disable; default: 0.7)"
             )
 
     return errors
