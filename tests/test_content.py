@@ -1346,3 +1346,171 @@ def test_generate_post_similarity_disabled_when_threshold_is_one(caplog):
         content.generate_post(_STORE)
 
     assert not any("similar" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# max_similarity_retries — retry when post is too similar to recent history
+# ---------------------------------------------------------------------------
+
+def _fake_defaults_with(overrides: dict):
+    """Return a side_effect function that merges overrides into effective_defaults."""
+    from meo import config as cfg
+    original = cfg.effective_defaults
+    def _patched(store):
+        d = original(store)
+        d.update(overrides)
+        return d
+    return _patched
+
+
+def test_generate_post_similarity_retry_fires_once(caplog):
+    """When post is too similar, one retry is attempted before a warning."""
+    past_text = "今週のおすすめメニューをご紹介します。ぜひお越しください。"
+    similar_text = "今週のおすすめメニューをご紹介します。ぜひいらしてください。"
+    fresh_text = "春の新メニューが登場しました！季節を感じる施術をどうぞ。"
+
+    call_count = {"n": 0}
+
+    def side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        return similar_text if call_count["n"] == 1 else fresh_text
+
+    import logging
+    with patch("meo.content._call_llm", side_effect=side_effect), \
+         patch("meo.content.get_post_history", return_value=[{"text": past_text}]), \
+         patch("meo.content.holiday_context_str", return_value=""), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_similarity_retries": 1})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_post(_STORE)
+
+    assert result == fresh_text
+    assert call_count["n"] == 2, "Expected exactly 2 LLM calls"
+    retry_warnings = [r for r in caplog.records if "similarity attempt" in r.message]
+    assert len(retry_warnings) == 1
+
+
+def test_generate_post_similarity_retry_zero_disables_retry(caplog):
+    """max_similarity_retries=0 means warn-only — no extra LLM call."""
+    past_text = "今週のおすすめメニューをご紹介します。ぜひお越しください。"
+    similar_text = "今週のおすすめメニューをご紹介します。ぜひいらしてください。"
+
+    call_count = {"n": 0}
+
+    def side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        return similar_text
+
+    import logging
+    with patch("meo.content._call_llm", side_effect=side_effect), \
+         patch("meo.content.get_post_history", return_value=[{"text": past_text}]), \
+         patch("meo.content.holiday_context_str", return_value=""), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_similarity_retries": 0})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_post(_STORE)
+
+    assert result == similar_text
+    assert call_count["n"] == 1, "Expected exactly 1 LLM call (no retry)"
+    assert not any("similarity attempt" in r.message for r in caplog.records)
+    # Still logs a "still similar" warning (same as the original warn-only path)
+    assert any("similar" in r.message for r in caplog.records)
+
+
+def test_generate_post_similarity_retry_exhausted_warns_and_returns(caplog):
+    """When all similarity retries are used and text is still similar, warn + return it."""
+    past_text = "今週のおすすめメニューをご紹介します。ぜひお越しください。"
+    always_similar = "今週のおすすめメニューをご紹介します。ぜひいらしてください。"
+
+    import logging
+    with _mock_llm(always_similar), \
+         patch("meo.content.get_post_history", return_value=[{"text": past_text}]), \
+         patch("meo.content.holiday_context_str", return_value=""), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_similarity_retries": 2})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_post(_STORE)
+
+    assert result == always_similar
+    retry_warnings = [r for r in caplog.records if "similarity attempt" in r.message]
+    assert len(retry_warnings) == 2, "Expected 2 retry warnings (2 retries used)"
+    exhausted_warnings = [r for r in caplog.records if "still" in r.message and "similar" in r.message]
+    assert len(exhausted_warnings) == 1, "Expected 1 'still similar' exhausted warning"
+
+
+def test_generate_post_similarity_retry_independent_of_banned_retries(caplog):
+    """Banned-word retries and similarity retries use separate budgets."""
+    past_text = "今週のおすすめメニューをご紹介します。ぜひお越しください。"
+    # First call: banned word; second call: clean but similar; third: clean and fresh
+    banned_text = "今週の激安キャンペーン！"
+    similar_text = "今週のおすすめメニューをご紹介します。ぜひいらしてください。"
+    fresh_text = "梅雨入り前に特別ケアはいかがですか？スタッフ一同お待ちしております。"
+
+    responses = [banned_text, similar_text, fresh_text]
+    call_count = {"n": 0}
+
+    def side_effect(*args, **kwargs):
+        idx = min(call_count["n"], len(responses) - 1)
+        call_count["n"] += 1
+        return responses[idx]
+
+    import logging
+    with patch("meo.content._call_llm", side_effect=side_effect), \
+         patch("meo.content.get_post_history", return_value=[{"text": past_text}]), \
+         patch("meo.content.holiday_context_str", return_value=""), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({
+                   "max_banned_retries": 2,
+                   "max_similarity_retries": 1,
+               })), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_post(_STORE)
+
+    assert result == fresh_text
+    assert call_count["n"] == 3
+
+
+# ---------------------------------------------------------------------------
+# truncate_at_sentence applied to generate_reply and generate_answer
+# ---------------------------------------------------------------------------
+
+def test_generate_reply_truncates_at_sentence_boundary():
+    """When reply output exceeds max_reply_chars, it is cut at the last 。before the limit."""
+    sentence_block = "ありがとうございます。" * 600   # well over 4096 chars with 。 boundaries
+    with _mock_llm(sentence_block), \
+         patch("meo.content.get_reply_history", return_value=[]):
+        result = content.generate_reply(_REVIEW, _STORE)
+    max_chars = cfg.content()["defaults"]["max_reply_chars"]
+    assert len(result) <= max_chars
+    assert result.endswith("。")
+
+
+def test_generate_reply_truncation_falls_back_to_hard_slice_when_no_sentence_end():
+    """When there is no 。！？ before max_reply_chars in a reply, falls back to character slice."""
+    no_boundary = "あ" * 99999
+    with _mock_llm(no_boundary), \
+         patch("meo.content.get_reply_history", return_value=[]):
+        result = content.generate_reply(_REVIEW, _STORE)
+    max_chars = cfg.content()["defaults"]["max_reply_chars"]
+    assert len(result) == max_chars
+    assert all(c == "あ" for c in result)
+
+
+def test_generate_answer_truncates_at_sentence_boundary():
+    """When Q&A answer output exceeds max_answer_chars, it is cut at the last 。."""
+    sentence_block = "ご質問ありがとうございます。" * 100   # well over 1000 chars
+    with _mock_llm(sentence_block):
+        result = content.generate_answer("営業時間はいつですか？", _STORE)
+    max_chars = cfg.content()["defaults"].get("max_answer_chars", 1000)
+    assert len(result) <= max_chars
+    assert result.endswith("。")
+
+
+def test_generate_answer_truncation_falls_back_to_hard_slice():
+    """When there is no 。！？ before max_answer_chars in an answer, falls back to slice."""
+    no_boundary = "あ" * 99999
+    with _mock_llm(no_boundary):
+        result = content.generate_answer("営業時間はいつですか？", _STORE)
+    max_chars = cfg.content()["defaults"].get("max_answer_chars", 1000)
+    assert len(result) == max_chars
+    assert all(c == "あ" for c in result)

@@ -33,6 +33,7 @@ _ALLOWED_OVERRIDE_KEYS = frozenset({
     "max_banned_retries",
     "holiday_context_days",
     "max_post_similarity",
+    "max_similarity_retries",
 })
 
 _TIME_WINDOW_PATTERN = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
@@ -240,6 +241,15 @@ def validate_content(content_data: dict[str, Any]) -> list[str]:
             errors.append(
                 "content.yaml: defaults.max_post_similarity must be a number between "
                 "0.0 and 1.0 inclusive (0.0 = always warn, 1.0 = disable; default: 0.7)"
+            )
+
+        max_similarity_retries = defaults.get("max_similarity_retries")
+        if max_similarity_retries is not None and (
+            not isinstance(max_similarity_retries, int) or max_similarity_retries < 0
+        ):
+            errors.append(
+                "content.yaml: defaults.max_similarity_retries must be an integer >= 0 "
+                "(0 = warn only, no retry; default: 1)"
             )
 
     return errors

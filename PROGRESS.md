@@ -1,6 +1,72 @@
 # PROGRESS
 
-## Status: All milestones complete — 1905/1905 tests green (100% coverage on new code)
+## Status: All milestones complete — 1919/1919 tests green (100% coverage on new code)
+
+---
+
+## Completed this run (run 94)
+
+### feat(content): `max_similarity_retries` + sentence-boundary truncation for replies and answers
+
+#### 1. `max_similarity_retries` — retry generation when post similarity is too high
+
+Run 93 added a **warning-only** similarity guard: when a generated post's Jaccard
+character-bigram similarity to recent posts reached `max_post_similarity` (default 0.7),
+a WARNING was logged but the similar text was always used.
+
+This run adds a retry budget — `max_similarity_retries` (default: 1) — mirroring the
+existing `max_banned_retries` pattern:
+
+- When a generated post is ≥ `max_post_similarity` similar to a recent post **and**
+  similarity retries remain: log a `WARNING("similarity attempt N of M")` and regenerate.
+- When retries are exhausted (or `max_similarity_retries=0`): log a `WARNING("still
+  similar after N retries")` and return the text so a live run is never silently blocked.
+- Setting `max_similarity_retries: 0` restores the original warn-only behaviour.
+
+The banned-word and similarity retry budgets are **independent and additive**: a total of
+`max_banned_retries + max_similarity_retries + 1` attempts are made at most. The loop is
+unified so a single iteration counter covers both quality gates.
+
+**Config:**
+```yaml
+defaults:
+  max_similarity_retries: 1  # 0 = warn only, no retry; default 1
+```
+Can be overridden per-store in `stores.yaml` via the `overrides` key.
+
+#### 2. `truncate_at_sentence` applied to `generate_reply()` and `generate_answer()`
+
+Run 93 fixed `generate_post()` to cut at Japanese sentence boundaries (。！？) rather than
+slicing mid-character. `generate_reply()` and `generate_answer()` still used the raw
+`text[:max_chars]` fallback, meaning long LLM replies could end abruptly with no
+punctuation.
+
+Both functions now call `truncate_at_sentence(text, max_chars)` — the same utility
+added in run 93 — bringing all three generators to the same behaviour:
+- Cuts at the last 。！？ found within `max_chars`.
+- Falls back to a hard character slice only when no sentence boundary exists in the window.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `config/content.yaml` | Added `max_similarity_retries: 1` to defaults; updated `max_post_similarity` comment to say "warn/retry" |
+| `src/meo/validator.py` | Added `max_similarity_retries` to `_ALLOWED_OVERRIDE_KEYS`; validate non-negative integer in `validate_content()` |
+| `src/meo/content.py` | `generate_post`: read `max_similarity_retries`; extend total_attempts; unified loop with two independent retry counters and `continue`-based retries. `generate_reply` / `generate_answer`: replace `text[:max_chars]` with `truncate_at_sentence(text, max_chars)` |
+| `tests/test_content.py` | 8 new tests: similarity retry fires, zero disables retry, retries exhausted, retries independent of banned-word retries, reply sentence-boundary truncation, reply hard-slice fallback, answer sentence-boundary truncation, answer hard-slice fallback |
+| `tests/test_validator.py` | 6 new tests: absent/zero/positive valid; negative/float invalid; store override accepted |
+
+**Tests: +14 tests, 1905 → 1919, 100% coverage on all changed/new code.**
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
 
 ---
 

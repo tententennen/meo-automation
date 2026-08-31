@@ -82,6 +82,7 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
     store_defaults = cfg.effective_defaults(store)
     max_chars = store_defaults["max_post_chars"]
     max_banned_retries: int = store_defaults.get("max_banned_retries", 2)
+    max_similarity_retries: int = store_defaults.get("max_similarity_retries", 1)
     recent_count: int = store_defaults.get("recent_post_context_count", 3)
     holiday_days: int = store_defaults.get("holiday_context_days", 7)
 
@@ -151,36 +152,52 @@ def generate_post(store: dict[str, Any], *, forced_theme: str | None = None) -> 
 
     store_key = store.get("key", "?")
     max_similarity: float = store_defaults.get("max_post_similarity", 0.7)
-    total_attempts = max_banned_retries + 1
+    total_attempts = max_banned_retries + max_similarity_retries + 1
+    banned_retries_used = 0
+    similarity_retries_used = 0
     text = ""
-    for attempt in range(total_attempts):
+    for _ in range(total_attempts):
         text = _call_llm(user, conf["llm"], system=system)
         text = text.strip()
         text = truncate_at_sentence(text, max_chars)
         found = _check_banned_words(text, banned_words_list)
-        if not found:
-            if max_similarity < 1.0 and post_history:
-                sim, snippet = most_similar_entry(text, post_history)
-                if sim >= max_similarity:
-                    logger.warning(
-                        "[%s] Generated post is %.0f%% similar to a recent post "
-                        "(「%s…」); themes or vocabulary may be repeating. "
-                        "Consider expanding config/content.yaml themes.",
-                        store_key, sim * 100, snippet,
-                    )
-            return text
-        if attempt < max_banned_retries:
-            logger.warning(
-                "[%s] Generated post contains banned word(s) %s; regenerating "
-                "(attempt %d of %d).",
-                store_key, found, attempt + 1, total_attempts,
-            )
-        else:
+        if found:
+            if banned_retries_used < max_banned_retries:
+                banned_retries_used += 1
+                logger.warning(
+                    "[%s] Generated post contains banned word(s) %s; regenerating "
+                    "(banned-word attempt %d of %d).",
+                    store_key, found, banned_retries_used, max_banned_retries + 1,
+                )
+                continue
             logger.warning(
                 "[%s] Generated post still contains banned word(s) %s after %d attempt(s); "
                 "using final attempt's output. Adjust config/content.yaml banned_words or themes.",
-                store_key, found, total_attempts,
+                store_key, found, max_banned_retries + 1,
             )
+            return text
+        # No banned words — check post similarity against recent history.
+        if max_similarity < 1.0 and post_history:
+            sim, snippet = most_similar_entry(text, post_history)
+            if sim >= max_similarity:
+                if similarity_retries_used < max_similarity_retries:
+                    similarity_retries_used += 1
+                    logger.warning(
+                        "[%s] Generated post is %.0f%% similar to a recent post "
+                        "(「%s…」); regenerating for variety "
+                        "(similarity attempt %d of %d).",
+                        store_key, sim * 100, snippet,
+                        similarity_retries_used, max_similarity_retries + 1,
+                    )
+                    continue
+                logger.warning(
+                    "[%s] Generated post is still %.0f%% similar to a recent post "
+                    "(「%s…」) after %d similarity retr%s; using as-is. "
+                    "Consider expanding config/content.yaml themes.",
+                    store_key, sim * 100, snippet, max_similarity_retries,
+                    "y" if max_similarity_retries == 1 else "ies",
+                )
+        return text
     return text
 
 
@@ -306,8 +323,7 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     for attempt in range(total_attempts):
         text = _call_llm(user, conf["llm"], system=system)
         text = text.strip()
-        if len(text) > max_chars:
-            text = text[:max_chars]
+        text = truncate_at_sentence(text, max_chars)
         found = _check_banned_words(text, banned_words_list)
         if not found:
             return text
@@ -375,8 +391,7 @@ def generate_answer(question_text: str, store: dict[str, Any]) -> str:
     for attempt in range(total_attempts):
         text = _call_llm(user, conf["llm"], system=system)
         text = text.strip()
-        if len(text) > max_chars:
-            text = text[:max_chars]
+        text = truncate_at_sentence(text, max_chars)
         found = _check_banned_words(text, banned_words_list)
         if not found:
             return text

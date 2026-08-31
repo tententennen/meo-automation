@@ -813,3 +813,55 @@ def test_validate_stores_max_post_similarity_is_allowed_override():
     }
     errors = v.validate_stores(stores)
     assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# defaults.max_similarity_retries validation
+# ---------------------------------------------------------------------------
+
+def test_validate_content_max_similarity_retries_absent_is_valid():
+    """max_similarity_retries is optional — absent defaults silently."""
+    errors = v.validate_content(_VALID_CONTENT)
+    assert not any("max_similarity_retries" in e for e in errors)
+
+
+def test_validate_content_max_similarity_retries_zero_is_valid():
+    import copy
+    data = copy.deepcopy(_VALID_CONTENT)
+    data["defaults"]["max_similarity_retries"] = 0
+    assert v.validate_content(data) == []
+
+
+def test_validate_content_max_similarity_retries_positive_is_valid():
+    import copy
+    data = copy.deepcopy(_VALID_CONTENT)
+    data["defaults"]["max_similarity_retries"] = 3
+    assert v.validate_content(data) == []
+
+
+def test_validate_content_max_similarity_retries_negative_is_invalid():
+    import copy
+    data = copy.deepcopy(_VALID_CONTENT)
+    data["defaults"]["max_similarity_retries"] = -1
+    errors = v.validate_content(data)
+    assert any("max_similarity_retries" in e for e in errors)
+
+
+def test_validate_content_max_similarity_retries_float_is_invalid():
+    import copy
+    data = copy.deepcopy(_VALID_CONTENT)
+    data["defaults"]["max_similarity_retries"] = 1.5
+    errors = v.validate_content(data)
+    assert any("max_similarity_retries" in e for e in errors)
+
+
+def test_validate_stores_max_similarity_retries_is_allowed_override():
+    """max_similarity_retries is accepted as a per-store override key."""
+    stores = {
+        "store_a": {
+            **_VALID_STORES["store_a"],
+            "overrides": {"max_similarity_retries": 2},
+        }
+    }
+    errors = v.validate_stores(stores)
+    assert errors == []
