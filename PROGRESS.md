@@ -1,6 +1,91 @@
 # PROGRESS
 
-## Status: All milestones complete — 1919/1919 tests green (100% coverage on new code)
+## Status: All milestones complete — 1940/1940 tests green (100% coverage on new code)
+
+---
+
+## Completed this run (run 95)
+
+### feat(content): similarity guard for `generate_reply()` and `generate_answer()`
+
+Run 94 added `max_similarity_retries` for `generate_post()` only.  `generate_reply()`
+and `generate_answer()` had no similarity guard: if the LLM converged to a template
+reply (e.g. identical opener for every 5-star review) or a boilerplate Q&A answer,
+it went live with no warning.
+
+This run adds a **symmetric similarity guard** to both functions using the same
+Jaccard character-bigram approach as the post guard.
+
+#### New config key: `max_reply_similarity`
+
+```yaml
+defaults:
+  max_reply_similarity: 0.7   # warn/retry when a generated reply or Q&A answer
+                               # is ≥ this similar to recent replies/answers
+                               # (0.0 = always warn, 1.0 = disable; default: 0.7)
+```
+
+`max_similarity_retries` (existing) now applies to all three generators — posts,
+replies, and answers — so no new retry-budget key was needed.
+
+Can be overridden per-store in `stores.yaml` via the `overrides` key.
+
+#### `generate_reply()` — restructured history fetch + similarity guard
+
+Previously, `get_reply_history()` was called inside the `if recent_count > 0:`
+block and inside the `if reply_history:` sub-block, making it inaccessible to the
+generation loop for similarity checking.
+
+Now:
+- `reply_history` is fetched once before the loop (like `generate_post()`).
+  `recent_reply_context_count=0` still skips the API call and disables both
+  context injection and the similarity guard, preserving the existing behaviour.
+- The generation loop mirrors `generate_post()`:  unified loop with independent
+  `banned_retries_used` and `similarity_retries_used` counters; retry with
+  `continue`, early-return on exhaustion.
+- Similarity is checked against `reply_history` entries using
+  `most_similar_entry(..., field="reply")`.
+
+#### `generate_answer()` — history fetch + similarity guard added
+
+`generate_answer()` had no history context injection or similarity guard at all.
+
+Now:
+- Fetches `answer_history` (via `get_answer_history()`) before the loop, reusing
+  `recent_reply_context_count` for the fetch cap (0 = disable).
+- Applies the same `max_reply_similarity` / `max_similarity_retries` guard using
+  `most_similar_entry(..., field="answer")`.
+- Uses the same unified banned-word + similarity retry loop as the other two generators.
+
+#### `_text_utils.most_similar_entry()` — new `field` parameter
+
+Added an optional `field: str = "text"` keyword argument so the function can compare
+against any dict key.  Default is `"text"` (post history — backward compatible).
+Pass `field="reply"` for reply history or `field="answer"` for Q&A answer history.
+
+#### Files changed
+
+| File | Change |
+|---|---|
+| `config/content.yaml` | Added `max_reply_similarity: 0.7` to defaults; updated `max_similarity_retries` comment to cover all three generators |
+| `src/meo/_text_utils.py` | Added `field: str = "text"` parameter to `most_similar_entry()` |
+| `src/meo/content.py` | Import `get_answer_history`; `generate_reply()`: fetch history before loop, unified retry loop, similarity guard; `generate_answer()`: fetch history, unified retry loop, similarity guard |
+| `src/meo/validator.py` | Added `"max_reply_similarity"` to `_ALLOWED_OVERRIDE_KEYS`; added validation block (0.0–1.0 float) |
+| `tests/test_text_utils.py` | 4 new tests for `most_similar_entry` with `field="reply"` and `field="answer"` |
+| `tests/test_content.py` | 9 new tests: reply similarity (no history, threshold=1.0, retry fires, retry=0, retry exhausted, independent of banned retries) + answer similarity (no history, retry fires, retry=0) |
+| `tests/test_validator.py` | 8 new tests: `max_reply_similarity` absent/0.0/1.0/0.7 valid; negative/above-one/string invalid; store override accepted |
+
+**Tests: +21 tests, 1919 → 1940, 100% coverage on all changed/new code.**
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
 
 ---
 

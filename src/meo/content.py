@@ -23,7 +23,7 @@ from . import config as cfg
 from ._text_utils import truncate_at_sentence, most_similar_entry
 from .holidays import holiday_context_str
 from .llm import _call_llm, _call_anthropic, _call_openai, _call_with_retry
-from .state import get_post_history, get_reply_history
+from .state import get_answer_history, get_post_history, get_reply_history
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +260,8 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     store_defaults = cfg.effective_defaults(store)
     max_chars = store_defaults["max_reply_chars"]
     max_banned_retries: int = store_defaults.get("max_banned_retries", 2)
+    max_similarity_retries: int = store_defaults.get("max_similarity_retries", 1)
+    max_reply_similarity: float = store_defaults.get("max_reply_similarity", 0.7)
     recent_count: int = store_defaults.get("recent_reply_context_count", 3)
 
     raw_name = review.get("reviewer", {}).get("displayName", "")
@@ -281,23 +283,28 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     )
     banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
 
+    # Fetch reply history once — used for both context injection and similarity guard.
+    # recent_reply_context_count=0 disables context injection; an empty list
+    # disables the similarity guard too (consistent with generate_post() behaviour).
+    reply_history: list[dict] = (
+        get_reply_history(store["key"])[:recent_count] if recent_count > 0 else []
+    )
+
     # Inject snippets of recent replies so the LLM actively diversifies sentence
     # structure, opening phrases, and expressions rather than repeating the same template.
     # recent_reply_context_count=0 disables this (useful for first-run testing).
     recent_reply_context_line = ""
-    if recent_count > 0:
-        reply_history = get_reply_history(store["key"])[:recent_count]
-        if reply_history:
-            snippets = []
-            for i, entry in enumerate(reply_history, 1):
-                text = entry.get("reply", "")
-                snippet = text[:60] + "…" if len(text) > 60 else text
-                snippets.append(f"{i}. 「{snippet}」")
-            recent_reply_context_line = (
-                "最近の返信（同じ文体・定型文の繰り返しを避けてください）:\n"
-                + "\n".join(snippets)
-                + "\n"
-            )
+    if reply_history:
+        snippets = []
+        for i, entry in enumerate(reply_history, 1):
+            text = entry.get("reply", "")
+            snippet = text[:60] + "…" if len(text) > 60 else text
+            snippets.append(f"{i}. 「{snippet}」")
+        recent_reply_context_line = (
+            "最近の返信（同じ文体・定型文の繰り返しを避けてください）:\n"
+            + "\n".join(snippets)
+            + "\n"
+        )
 
     user = (
         f"現在の日付・季節: {date_context}\n"
@@ -318,27 +325,52 @@ def generate_reply(review: dict[str, Any], store: dict[str, Any]) -> str:
     )
 
     store_key = store.get("key", "?")
-    total_attempts = max_banned_retries + 1
+    total_attempts = max_banned_retries + max_similarity_retries + 1
+    banned_retries_used = 0
+    similarity_retries_used = 0
     text = ""
-    for attempt in range(total_attempts):
+    for _ in range(total_attempts):
         text = _call_llm(user, conf["llm"], system=system)
         text = text.strip()
         text = truncate_at_sentence(text, max_chars)
         found = _check_banned_words(text, banned_words_list)
-        if not found:
-            return text
-        if attempt < max_banned_retries:
-            logger.warning(
-                "[%s] Generated reply contains banned word(s) %s; regenerating "
-                "(attempt %d of %d).",
-                store_key, found, attempt + 1, total_attempts,
-            )
-        else:
+        if found:
+            if banned_retries_used < max_banned_retries:
+                banned_retries_used += 1
+                logger.warning(
+                    "[%s] Generated reply contains banned word(s) %s; regenerating "
+                    "(banned-word attempt %d of %d).",
+                    store_key, found, banned_retries_used, max_banned_retries + 1,
+                )
+                continue
             logger.warning(
                 "[%s] Generated reply still contains banned word(s) %s after %d attempt(s); "
                 "using final attempt's output. Adjust config/content.yaml banned_words.",
-                store_key, found, total_attempts,
+                store_key, found, max_banned_retries + 1,
             )
+            return text
+        # No banned words — check reply similarity against recent history.
+        if max_reply_similarity < 1.0 and reply_history:
+            sim, snippet = most_similar_entry(text, reply_history, field="reply")
+            if sim >= max_reply_similarity:
+                if similarity_retries_used < max_similarity_retries:
+                    similarity_retries_used += 1
+                    logger.warning(
+                        "[%s] Generated reply is %.0f%% similar to a recent reply "
+                        "(「%s…」); regenerating for variety "
+                        "(similarity attempt %d of %d).",
+                        store_key, sim * 100, snippet,
+                        similarity_retries_used, max_similarity_retries + 1,
+                    )
+                    continue
+                logger.warning(
+                    "[%s] Generated reply is still %.0f%% similar to a recent reply "
+                    "(「%s…」) after %d similarity retr%s; using as-is. "
+                    "Consider expanding reply variety or adjusting max_reply_similarity.",
+                    store_key, sim * 100, snippet, max_similarity_retries,
+                    "y" if max_similarity_retries == 1 else "ies",
+                )
+        return text
     return text
 
 
@@ -359,9 +391,19 @@ def generate_answer(question_text: str, store: dict[str, Any]) -> str:
     store_defaults = cfg.effective_defaults(store)
     max_chars: int = store_defaults.get("max_answer_chars", 1000)
     max_banned_retries: int = store_defaults.get("max_banned_retries", 2)
+    max_similarity_retries: int = store_defaults.get("max_similarity_retries", 1)
+    max_reply_similarity: float = store_defaults.get("max_reply_similarity", 0.7)
+    recent_count: int = store_defaults.get("recent_reply_context_count", 3)
 
     date_context = _jst_date_context()
     banned_line = f"禁止ワード: {', '.join(banned_words_list)}\n" if banned_words_list else ""
+
+    # Fetch answer history once — used for similarity guard so the LLM is not
+    # allowed to converge to a generic template across repeated Q&A answers.
+    # Reuses recent_reply_context_count (0 = disable) for symmetry.
+    answer_history: list[dict] = (
+        get_answer_history(store["key"])[:recent_count] if recent_count > 0 else []
+    )
 
     system = (
         f"あなたは{store['name']}のオーナーとして、Googleビジネスプロフィールの"
@@ -386,26 +428,51 @@ def generate_answer(question_text: str, store: dict[str, Any]) -> str:
     )
 
     store_key = store.get("key", "?")
-    total_attempts = max_banned_retries + 1
+    total_attempts = max_banned_retries + max_similarity_retries + 1
+    banned_retries_used = 0
+    similarity_retries_used = 0
     text = ""
-    for attempt in range(total_attempts):
+    for _ in range(total_attempts):
         text = _call_llm(user, conf["llm"], system=system)
         text = text.strip()
         text = truncate_at_sentence(text, max_chars)
         found = _check_banned_words(text, banned_words_list)
-        if not found:
-            return text
-        if attempt < max_banned_retries:
-            logger.warning(
-                "[%s] Generated Q&A answer contains banned word(s) %s; regenerating "
-                "(attempt %d of %d).",
-                store_key, found, attempt + 1, total_attempts,
-            )
-        else:
+        if found:
+            if banned_retries_used < max_banned_retries:
+                banned_retries_used += 1
+                logger.warning(
+                    "[%s] Generated Q&A answer contains banned word(s) %s; regenerating "
+                    "(banned-word attempt %d of %d).",
+                    store_key, found, banned_retries_used, max_banned_retries + 1,
+                )
+                continue
             logger.warning(
                 "[%s] Generated Q&A answer still contains banned word(s) %s after %d attempt(s); "
                 "using final attempt's output. Adjust config/content.yaml banned_words.",
-                store_key, found, total_attempts,
+                store_key, found, max_banned_retries + 1,
             )
+            return text
+        # No banned words — check answer similarity against recent answer history.
+        if max_reply_similarity < 1.0 and answer_history:
+            sim, snippet = most_similar_entry(text, answer_history, field="answer")
+            if sim >= max_reply_similarity:
+                if similarity_retries_used < max_similarity_retries:
+                    similarity_retries_used += 1
+                    logger.warning(
+                        "[%s] Generated Q&A answer is %.0f%% similar to a recent answer "
+                        "(「%s…」); regenerating for variety "
+                        "(similarity attempt %d of %d).",
+                        store_key, sim * 100, snippet,
+                        similarity_retries_used, max_similarity_retries + 1,
+                    )
+                    continue
+                logger.warning(
+                    "[%s] Generated Q&A answer is still %.0f%% similar to a recent answer "
+                    "(「%s…」) after %d similarity retr%s; using as-is. "
+                    "Consider adjusting max_reply_similarity or expanding Q&A variety.",
+                    store_key, sim * 100, snippet, max_similarity_retries,
+                    "y" if max_similarity_retries == 1 else "ies",
+                )
+        return text
     return text
 

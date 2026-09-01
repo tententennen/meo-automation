@@ -19,7 +19,8 @@ defaults:
   max_banned_retries: 2             # max extra LLM calls when generated text contains banned words (0 = warn only, no retry)
   holiday_context_days: 7           # days ahead to scan for Japanese holidays/events to inject into the post LLM prompt (0 = disable)
   max_post_similarity: 0.7          # warn/retry when generated post is ≥ this similar (Jaccard bigram) to recent posts (0.0 = always warn, 1.0 = disable)
-  max_similarity_retries: 1         # max extra LLM calls when a generated post exceeds max_post_similarity (0 = warn only, no retry)
+  max_reply_similarity: 0.7         # warn/retry when a generated reply or Q&A answer is ≥ this similar (Jaccard bigram) to recent replies/answers (0.0 = always warn, 1.0 = disable)
+  max_similarity_retries: 1         # max extra LLM calls when generated post/reply/answer exceeds its similarity threshold (0 = warn only, no retry)
 
 # Industry-specific tone profiles (used in the LLM prompt)
 industry_tones:

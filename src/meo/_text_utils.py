@@ -57,18 +57,27 @@ def jaccard_similarity(a: str, b: str) -> float:
     return intersection / union
 
 
-def most_similar_entry(text: str, history: list[dict]) -> tuple[float, str]:
+def most_similar_entry(
+    text: str, history: list[dict], *, field: str = "text"
+) -> tuple[float, str]:
     """Return ``(max_similarity, snippet)`` for the most similar entry in *history*.
 
-    Compares *text* against each ``"text"`` field in *history* using
+    Compares *text* against the value at *field* in each history dict using
     :func:`jaccard_similarity`.  Returns the highest similarity score and a
     60-character snippet of the matching entry.  Returns ``(0.0, "")`` when
-    *history* is empty or all entries lack a ``"text"`` field.
+    *history* is empty or all entries lack the *field* key.
+
+    Args:
+        text:    The newly generated text to compare against history.
+        history: List of history dicts (post, reply, or answer history entries).
+        field:   Dict key to read from each entry.  Defaults to ``"text"``
+                 (post history).  Pass ``"reply"`` for reply history entries
+                 or ``"answer"`` for Q&A answer history entries.
     """
     best_sim = 0.0
     best_snippet = ""
     for entry in history:
-        past = entry.get("text", "")
+        past = entry.get(field, "")
         if not past:
             continue
         sim = jaccard_similarity(text, past)

@@ -189,3 +189,32 @@ class TestMostSimilarEntry:
         sim, snippet = most_similar_entry(target, history)
         assert sim > 0.0
         assert "春のおすすめ" in snippet
+
+    def test_custom_field_reply_reads_reply_key(self):
+        """field='reply' reads the 'reply' key, not 'text'."""
+        reply_text = "ご来店いただきありがとうございます。またのご来店をお待ちしております。"
+        entry = {"date": "2026-07-20", "reply": reply_text}
+        sim, snippet = most_similar_entry(reply_text, [entry], field="reply")
+        assert sim == pytest.approx(1.0)
+        assert reply_text[:60] in snippet
+
+    def test_custom_field_reply_ignores_text_key(self):
+        """field='reply' must not match on the 'text' key."""
+        entry = {"text": "今週のおすすめです。", "reply": "全く異なる内容です。"}
+        sim, snippet = most_similar_entry("今週のおすすめです。", [entry], field="reply")
+        assert sim < 0.5
+
+    def test_custom_field_answer_reads_answer_key(self):
+        """field='answer' reads the 'answer' key, not 'text'."""
+        answer_text = "営業時間は10時から20時です。お気軽にお越しください。"
+        entry = {"date": "2026-07-20", "answer": answer_text}
+        sim, snippet = most_similar_entry(answer_text, [entry], field="answer")
+        assert sim == pytest.approx(1.0)
+        assert answer_text[:60] in snippet
+
+    def test_custom_field_answer_missing_returns_zero(self):
+        """field='answer' on an entry without 'answer' key returns 0.0."""
+        entry = {"text": "なにかの投稿です。", "reply": "ありがとうございます。"}
+        sim, snippet = most_similar_entry("なにかの投稿です。", [entry], field="answer")
+        assert sim == pytest.approx(0.0)
+        assert snippet == ""

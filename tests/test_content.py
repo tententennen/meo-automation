@@ -1514,3 +1514,198 @@ def test_generate_answer_truncation_falls_back_to_hard_slice():
     max_chars = cfg.content()["defaults"].get("max_answer_chars", 1000)
     assert len(result) == max_chars
     assert all(c == "あ" for c in result)
+
+
+# ---------------------------------------------------------------------------
+# max_reply_similarity — similarity guard for generate_reply()
+# ---------------------------------------------------------------------------
+
+def test_generate_reply_no_similarity_check_when_history_empty(caplog):
+    """No similarity warning is logged when reply_history is empty (first run)."""
+    import logging
+    with _mock_llm("ご来店ありがとうございます。"), \
+         patch("meo.content.get_reply_history", return_value=[]), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        content.generate_reply(_REVIEW, _STORE)
+    assert not any("similar" in r.message for r in caplog.records)
+
+
+def test_generate_reply_similarity_disabled_when_threshold_is_one(caplog):
+    """max_reply_similarity=1.0 disables the guard — no warning even for identical reply."""
+    identical = "この度はご来店いただきありがとうございます。またのご来店をお待ちしております。"
+    import logging
+    with _mock_llm(identical), \
+         patch("meo.content.get_reply_history",
+               return_value=[{"reply": identical}]), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_reply_similarity": 1.0})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        content.generate_reply(_REVIEW, _STORE)
+    assert not any("similar" in r.message for r in caplog.records)
+
+
+def test_generate_reply_similarity_retry_fires_once(caplog):
+    """When a reply is too similar, one retry is attempted before a warning."""
+    past_reply = "この度はご来店いただきありがとうございます。またのご来店をお待ちしております。"
+    similar_reply = "この度はご来店いただきありがとうございます。またのお越しをお待ちしております。"
+    fresh_reply = "ご丁寧なレビューをいただき、スタッフ一同大変うれしく思っております。"
+
+    call_count = {"n": 0}
+
+    def side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        return similar_reply if call_count["n"] == 1 else fresh_reply
+
+    import logging
+    with patch("meo.content._call_llm", side_effect=side_effect), \
+         patch("meo.content.get_reply_history",
+               return_value=[{"reply": past_reply}]), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_similarity_retries": 1})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_reply(_REVIEW, _STORE)
+
+    assert result == fresh_reply
+    assert call_count["n"] == 2, "Expected exactly 2 LLM calls"
+    retry_warnings = [r for r in caplog.records if "similarity attempt" in r.message]
+    assert len(retry_warnings) == 1
+
+
+def test_generate_reply_similarity_retry_zero_disables_retry(caplog):
+    """max_similarity_retries=0 means warn-only — no extra LLM call for reply."""
+    past_reply = "この度はご来店いただきありがとうございます。またのご来店をお待ちしております。"
+    similar_reply = "この度はご来店いただきありがとうございます。またのお越しをお待ちしております。"
+
+    call_count = {"n": 0}
+
+    def side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        return similar_reply
+
+    import logging
+    with patch("meo.content._call_llm", side_effect=side_effect), \
+         patch("meo.content.get_reply_history",
+               return_value=[{"reply": past_reply}]), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_similarity_retries": 0})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_reply(_REVIEW, _STORE)
+
+    assert result == similar_reply
+    assert call_count["n"] == 1, "Expected exactly 1 LLM call (no retry)"
+    assert not any("similarity attempt" in r.message for r in caplog.records)
+    assert any("similar" in r.message for r in caplog.records)
+
+
+def test_generate_reply_similarity_retry_exhausted_warns_and_returns(caplog):
+    """When all similarity retries are used, warn and return the similar reply."""
+    past_reply = "この度はご来店いただきありがとうございます。またのご来店をお待ちしております。"
+    always_similar = "この度はご来店いただきありがとうございます。またのお越しをお待ちしております。"
+
+    import logging
+    with _mock_llm(always_similar), \
+         patch("meo.content.get_reply_history",
+               return_value=[{"reply": past_reply}]), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_similarity_retries": 2})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_reply(_REVIEW, _STORE)
+
+    assert result == always_similar
+    retry_warnings = [r for r in caplog.records if "similarity attempt" in r.message]
+    assert len(retry_warnings) == 2
+    exhausted = [r for r in caplog.records if "still" in r.message and "similar" in r.message]
+    assert len(exhausted) == 1
+
+
+def test_generate_reply_similarity_retries_independent_of_banned_retries(caplog):
+    """Banned-word and similarity retry budgets are independent for replies."""
+    past_reply = "この度はご来店いただきありがとうございます。またのご来店をお待ちしております。"
+    banned_reply = "激安トリートメントをご利用ください。"
+    similar_reply = "この度はご来店いただきありがとうございます。またのお越しをお待ちしております。"
+    fresh_reply = "ご丁寧なレビューをいただき、スタッフ一同大変うれしく思っております。"
+
+    responses = [banned_reply, similar_reply, fresh_reply]
+    call_count = {"n": 0}
+
+    def side_effect(*args, **kwargs):
+        idx = min(call_count["n"], len(responses) - 1)
+        call_count["n"] += 1
+        return responses[idx]
+
+    import logging
+    with patch("meo.content._call_llm", side_effect=side_effect), \
+         patch("meo.content.get_reply_history",
+               return_value=[{"reply": past_reply}]), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({
+                   "max_banned_retries": 2,
+                   "max_similarity_retries": 1,
+               })), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_reply(_REVIEW, _STORE)
+
+    assert result == fresh_reply
+    assert call_count["n"] == 3
+
+
+# ---------------------------------------------------------------------------
+# max_reply_similarity — similarity guard for generate_answer()
+# ---------------------------------------------------------------------------
+
+def test_generate_answer_no_similarity_check_when_history_empty(caplog):
+    """No similarity warning when answer_history is empty."""
+    import logging
+    with _mock_llm("営業時間は10時から20時です。"), \
+         patch("meo.content.get_answer_history", return_value=[]), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        content.generate_answer("営業時間はいつですか？", _STORE)
+    assert not any("similar" in r.message for r in caplog.records)
+
+
+def test_generate_answer_similarity_retry_fires_once(caplog):
+    """When an answer is too similar to a past answer, one retry is attempted."""
+    past_answer = "営業時間は月曜日から土曜日の10時から20時です。お気軽にお越しください。"
+    # Jaccard bigram similarity ~0.76 — comfortably above the 0.7 default threshold.
+    similar_answer = "営業時間は月曜日から土曜日の10時から20時です。お気軽にいらしてください。"
+    fresh_answer = "通常は10時オープンです。詳細はお電話またはウェブサイトをご確認ください。"
+
+    call_count = {"n": 0}
+
+    def side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        return similar_answer if call_count["n"] == 1 else fresh_answer
+
+    import logging
+    with patch("meo.content._call_llm", side_effect=side_effect), \
+         patch("meo.content.get_answer_history",
+               return_value=[{"answer": past_answer}]), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_similarity_retries": 1})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_answer("営業時間はいつですか？", _STORE)
+
+    assert result == fresh_answer
+    assert call_count["n"] == 2, "Expected exactly 2 LLM calls"
+    retry_warnings = [r for r in caplog.records if "similarity attempt" in r.message]
+    assert len(retry_warnings) == 1
+
+
+def test_generate_answer_similarity_retry_zero_disables_retry(caplog):
+    """max_similarity_retries=0 means warn-only for answers — no extra LLM call."""
+    past_answer = "営業時間は月曜日から土曜日の10時から20時です。お気軽にお越しください。"
+    # Jaccard bigram similarity ~0.76 — above the 0.7 default threshold.
+    similar_answer = "営業時間は月曜日から土曜日の10時から20時です。お気軽にいらしてください。"
+
+    import logging
+    with _mock_llm(similar_answer), \
+         patch("meo.content.get_answer_history",
+               return_value=[{"answer": past_answer}]), \
+         patch("meo.content.cfg.effective_defaults",
+               side_effect=_fake_defaults_with({"max_similarity_retries": 0})), \
+         caplog.at_level(logging.WARNING, logger="meo.content"):
+        result = content.generate_answer("営業時間はいつですか？", _STORE)
+
+    assert result == similar_answer
+    assert not any("similarity attempt" in r.message for r in caplog.records)
+    assert any("similar" in r.message for r in caplog.records)
