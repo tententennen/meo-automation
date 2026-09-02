@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import sys
 from collections import Counter
-from datetime import date
+from contextlib import contextmanager
+from datetime import date, datetime as _real_datetime
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 import requests
@@ -90,6 +92,20 @@ _STABLE_HISTORY = [
 ]
 
 _TODAY_STR = "2026-08-28 09:00 JST"
+
+
+class _FakeDatetime(_real_datetime):
+    """Freeze datetime.now() to _TODAY for tests that call main() directly."""
+    @classmethod
+    def now(cls, tz=None):
+        return _real_datetime(2026, 8, 28, 9, 0, 0, tzinfo=tz or ZoneInfo("Asia/Tokyo"))
+
+
+@contextmanager
+def _freeze_main_date():
+    """Freeze datetime.now in rating_alert so main() uses _TODAY."""
+    with patch("meo.tools.rating_alert.datetime", _FakeDatetime):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -456,13 +472,14 @@ class TestMain:
 
     def test_exits_1_when_decline_detected(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["meo-rating-alert", "--dry-run"])
-        with patch(
-            "meo.tools.rating_alert.get_reply_history",
-            return_value=_DECLINING_HISTORY,
-        ):
-            with patch("meo.tools.rating_alert.cfg.store_list", return_value=_STORES):
-                with pytest.raises(SystemExit) as exc:
-                    main()
+        with _freeze_main_date():
+            with patch(
+                "meo.tools.rating_alert.get_reply_history",
+                return_value=_DECLINING_HISTORY,
+            ):
+                with patch("meo.tools.rating_alert.cfg.store_list", return_value=_STORES):
+                    with pytest.raises(SystemExit) as exc:
+                        main()
         assert exc.value.code == 1
 
     def test_dry_run_does_not_send_slack(self, monkeypatch, capsys):
@@ -483,16 +500,17 @@ class TestMain:
         monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        with patch(
-            "meo.tools.rating_alert.get_reply_history",
-            return_value=_DECLINING_HISTORY,
-        ):
-            with patch("meo.tools.rating_alert.cfg.store_list", return_value=_STORES):
-                with patch(
-                    "meo.tools.rating_alert.requests.post", return_value=mock_resp
-                ) as mock_post:
-                    with pytest.raises(SystemExit):
-                        main()
+        with _freeze_main_date():
+            with patch(
+                "meo.tools.rating_alert.get_reply_history",
+                return_value=_DECLINING_HISTORY,
+            ):
+                with patch("meo.tools.rating_alert.cfg.store_list", return_value=_STORES):
+                    with patch(
+                        "meo.tools.rating_alert.requests.post", return_value=mock_resp
+                    ) as mock_post:
+                        with pytest.raises(SystemExit):
+                            main()
         mock_post.assert_called_once()
 
     def test_unknown_store_exits_1(self, monkeypatch):
@@ -528,11 +546,12 @@ class TestMain:
             sys, "argv",
             ["meo-rating-alert", "--dry-run", "--store", "the_body_kyoto"],
         )
-        with patch(
-            "meo.tools.rating_alert.get_reply_history",
-            return_value=_DECLINING_HISTORY,
-        ):
-            with patch("meo.tools.rating_alert.cfg.store_list", return_value=_STORES):
-                with pytest.raises(SystemExit) as exc:
-                    main()
+        with _freeze_main_date():
+            with patch(
+                "meo.tools.rating_alert.get_reply_history",
+                return_value=_DECLINING_HISTORY,
+            ):
+                with patch("meo.tools.rating_alert.cfg.store_list", return_value=_STORES):
+                    with pytest.raises(SystemExit) as exc:
+                        main()
         assert exc.value.code == 1  # decline detected for kyoto

@@ -4,6 +4,54 @@
 
 ---
 
+## Completed this run (run 96)
+
+### fix(tests): freeze `datetime.now` in `TestMain` to prevent date-drift failures
+
+Three tests in `tests/test_rating_alert.py` had started failing as real
+calendar time moved past the date assumed by the fixture data:
+
+| Test | Root cause |
+|---|---|
+| `test_exits_1_when_decline_detected` | `main()` used real current date; fixture data no longer in expected 14-day window |
+| `test_live_sends_slack_on_decline` | same |
+| `test_single_store_filter` | same |
+
+`run_rating_alert()` accepts a `today` parameter, but `main()` calls it
+without one, so it falls back to `datetime.now(tz=_JST).date()`.  The
+`TestRunRatingAlert` tests already passed `today=_TODAY`, so they were
+unaffected.  The `TestMain` tests were written when today ≈ 2026-08-28 and
+assumed the real date would remain there — it drifted to 2026-09-02, shifting
+the 14-day windows away from the fixture entries.
+
+**Fix** (tests only — no production code changed):
+
+- Added `_FakeDatetime(_real_datetime)` subclass that overrides `now()` to
+  return `datetime(2026, 8, 28, 9, 0, 0, tzinfo=<JST>)`.
+- Added `_freeze_main_date()` `@contextmanager` that patches
+  `meo.tools.rating_alert.datetime` with `_FakeDatetime` for the duration
+  of the call.
+- Wrapped the three failing `TestMain` tests with `_freeze_main_date()`.
+- Added required imports: `contextmanager`, `datetime as _real_datetime`,
+  `ZoneInfo`.
+
+No production code was changed; no test logic was altered — only the date
+reference used by `main()` is now frozen for those three tests.
+
+**Tests: 1937 → 1940 (3 fixed), 1940/1940 green.**
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+
+---
+
 ## Completed this run (run 95)
 
 ### feat(content): similarity guard for `generate_reply()` and `generate_answer()`
