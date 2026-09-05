@@ -4,6 +4,28 @@
 
 ---
 
+## Completed this run (run 98)
+
+### chore(ci): verify test suite health after date advance to 2026-09-05
+
+Routine maintenance run. No code changes. All 1940 tests pass with no
+date-drift or other regressions detected.
+
+**Environment:** 2026-09-05 (JST). `TestMain` date-freezing introduced in
+run 96 continues to hold correctly.
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section below). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+
+---
+
 ## Completed this run (run 97)
 
 ### chore(ci): verify test suite health after date advance to 2026-09-04
