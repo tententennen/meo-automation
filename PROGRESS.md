@@ -7544,3 +7544,75 @@ Needs Human Action section above). After API access is granted:
 5. Run `meo-run` live → first real post + replies + Q&A
 6. After first live run, check `meo-score-history` — should show today's grades
 7. Check Slack (if configured) — daily message + rating-alert if any store drops
+
+---
+
+## Run 87 — 2026-09-24
+
+### What was done
+
+Added `meo-post-gap-alert` — a new automated alert that fires when any store
+hasn't published a 最新情報 post in too long, filling a blind spot that
+`meo-error-alert` cannot cover (e.g. the GitHub Actions runner not running at
+all, or state.json being lost).
+
+#### 1. `src/meo/tools/post_gap_alert.py` — new tool
+
+Reads `last_post` dates from `state.json` for each store and computes the gap
+since the last successful post.  Fires a Slack alert when:
+- The gap since last post is >= `--max-gap-days` (default: `post_cadence_days × 3`
+  from `config/content.yaml` — i.e. 3 days for the default daily cadence)
+- OR the store has never posted AND `--include-never-posted` is set
+
+Key design points:
+- Default threshold derived from `config/content.yaml post_cadence_days` — no
+  hard-coding; adjusting cadence automatically adjusts the gap threshold.
+- `--include-never-posted` flag to also alert on stores with no post history
+  (useful to detect unconfigured stores after initial setup).
+- Reads only `state.json` and config — **no Google credentials needed**.
+- Complementary to `meo-error-alert`: error-alert catches consecutive run
+  failures within a run; post-gap-alert catches the case where the runner
+  itself stopped or state was reset.
+
+CLI options:
+- `--max-gap-days N`         — override the default gap threshold
+- `--include-never-posted`   — also alert for stores with no post history
+- `--dry-run`                — print without sending to Slack
+- `--store KEY [...]`        — limit to specific store(s)
+
+Exit 0 = all stores within the gap window; Exit 1 = alert fired.
+
+#### 2. `.github/workflows/daily_run.yml` — new CI step
+
+Added "Alert on post content gap" after the rating-alert step.
+Runs `python -m meo.tools.post_gap_alert || true` on every daily run.
+
+#### 3. `pyproject.toml` — new entry point
+
+`meo-post-gap-alert = "meo.tools.post_gap_alert:main"` registered.
+
+#### Tests
+
+41 new tests in `tests/test_post_gap_alert.py` (1981 total, up from 1940):
+- `TestDefaultMaxGap` — cadence multiplier, missing key, zero cadence, cfg error
+- `TestComputeGaps` — recent post, never-posted (excluded/included), invalid date,
+  same-day zero gap, JST today default, last_post_date in result
+- `TestRunPostGapAlert` — no alert when recent, threshold exact/below/above,
+  never-posted flag, multi-store, default gap, store isolation
+- `TestFormatAlert` — store name, days, last date, never-posted label, count,
+  now string, JST default
+- `TestSendAlert` — no URL, success POST, HTTP error, connection error
+- `TestMain` — exit 0/1, dry-run skip, live send, store filter, unknown store,
+  invalid gap, include-never-posted flag, default gap
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+6. After first live run, check `meo-score-history` — should show today's grades
+7. Check Slack (if configured) — daily message + rating-alert + post-gap-alert

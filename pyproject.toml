@@ -63,6 +63,7 @@ meo-event = "meo.tools.event:main"
 meo-delete-post = "meo.tools.delete_post:main"
 meo-update-post = "meo.tools.update_post:main"
 meo-qa = "meo.tools.qa:main"
+meo-post-gap-alert = "meo.tools.post_gap_alert:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

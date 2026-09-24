@@ -165,6 +165,20 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m meo.tools.rating_alert || true
 
+      # Alert when any store has not published a 最新情報 post in too long.
+      # Default threshold: post_cadence_days x 3 (i.e. 3 days for a daily cadence).
+      # Catches silent posting failures that error_alert wouldn't catch -- e.g. if
+      # the runner itself stopped running, or state.json was lost.  Reads only
+      # state.json and config -- no Google credentials needed.  Exits 0 when all
+      # stores are within the gap window; exits 1 when at least one store triggers
+      # (Slack alert sent).  continue-on-error keeps this step non-fatal.
+      - name: Alert on post content gap
+        if: always()
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m meo.tools.post_gap_alert || true
+
       # Save state after the run so the next run's duplicate guard has context.
       # continue-on-error: true guards against the first-ever run where state.json
       # may not exist (e.g., dry-run with no stores configured).
