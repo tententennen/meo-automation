@@ -1,6 +1,32 @@
 # PROGRESS
 
-## Status: All milestones complete — 1940/1940 tests green (100% coverage on new code)
+## Status: All milestones complete — 1981/1981 tests green (100% coverage on new code)
+
+---
+
+## Completed this run (run 117)
+
+### chore(ci): verify test suite health after date advance to 2026-09-25
+
+Routine maintenance run. No code changes. All 1981 tests pass (41 more than
+last run — existing tests collected more parametrize cases or new fixtures
+were registered; no regressions detected).
+
+**Environment:** 2026-09-25 (JST). `TestMain` date-freezing introduced in
+run 96 continues to hold correctly.
+
+**Note:** Dependencies must be installed via `pip install -e ".[dev]"` (not just
+`pip install -r requirements.txt`) for the test suite to collect correctly.
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section below). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
 
 ---
 
