@@ -4,6 +4,39 @@
 
 ---
 
+## Completed this run (run 118)
+
+### fix(tests): freeze date in TestMain to prevent date-drift failures
+
+3 tests in `TestMain` (`test_exits_0_when_no_gaps`, `test_store_filter`,
+`test_default_gap_used_when_not_specified`) started failing because they used
+hardcoded post-dates of `2026-09-23` with a 3-day gap threshold — today is
+2026-09-26, exactly 3 days later, which hit the `>= 3` threshold and triggered
+alerts.
+
+Root cause: `main()` passes no `today=` argument, so `compute_gaps` fetches the
+real wall-clock date. Fixed by:
+
+1. Extracting a `_today_jst()` helper in `post_gap_alert.py` (replaces the
+   inline `datetime.now(tz=_JST).date()` call in `compute_gaps`).
+2. Adding `monkeypatch.setattr("meo.tools.post_gap_alert._today_jst", lambda: _TODAY)`
+   in `TestMain._patch_all` so all `TestMain` cases see the frozen `_TODAY =
+   date(2026, 9, 24)`.
+
+All 1981 tests pass.
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section below). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+
+---
+
 ## Completed this run (run 117)
 
 ### chore(ci): verify test suite health after date advance to 2026-09-25

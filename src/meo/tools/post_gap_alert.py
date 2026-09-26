@@ -38,6 +38,10 @@ _JST = ZoneInfo("Asia/Tokyo")
 _DEFAULT_GAP_MULTIPLIER = 3
 
 
+def _today_jst() -> date:
+    return datetime.now(tz=_JST).date()
+
+
 def _default_max_gap() -> int:
     """Return cadence_days * 3 as the default gap threshold."""
     try:
@@ -59,7 +63,7 @@ def compute_gaps(
     ``days_since`` is None when the store has never posted.
     """
     if today is None:
-        today = datetime.now(tz=_JST).date()
+        today = _today_jst()
     result = []
     for store in stores:
         key = store["key"]

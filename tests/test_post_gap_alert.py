@@ -332,6 +332,7 @@ class TestMain:
             "meo.tools.post_gap_alert.cfg.content",
             lambda: {"defaults": {"post_cadence_days": 1}},
         )
+        monkeypatch.setattr("meo.tools.post_gap_alert._today_jst", lambda: _TODAY)
 
     def test_exits_0_when_no_gaps(self, monkeypatch, capsys):
         dates = {s["key"]: "2026-09-23" for s in _STORES}
