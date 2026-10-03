@@ -24,6 +24,12 @@ on:
         default: "false"
         type: choice
         options: ["true", "false"]
+      skip_qa:
+        description: "Skip Q&A question answering"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
       store:
         description: "Run only for this store key (leave blank for all). Keys: the_body_osaka_shinsaibashi | the_body_kyoto | mybear_studio_kyoto"
         required: false
@@ -100,6 +106,7 @@ jobs:
             [ "${{ inputs.dry_run }}" = "true" ]     && ARGS="$ARGS --dry-run"
             [ "${{ inputs.skip_posts }}" = "true" ]  && ARGS="$ARGS --skip-posts"
             [ "${{ inputs.skip_reviews }}" = "true" ] && ARGS="$ARGS --skip-reviews"
+            [ "${{ inputs.skip_qa }}" = "true" ]      && ARGS="$ARGS --skip-qa"
             [ "${{ inputs.force }}" = "true" ]        && ARGS="$ARGS --force"
             # $MEO_STORE_INPUT is safe: passed via env, not interpolated into script
             [ -n "$MEO_STORE_INPUT" ]                 && ARGS="$ARGS --store $MEO_STORE_INPUT"
@@ -178,6 +185,18 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m meo.tools.post_gap_alert || true
+
+      # Alert when any store's Drive photo variety is critically low (< 3 unique images
+      # in the last 5 posts), indicating the Drive folder needs more photos to avoid
+      # repetitive posts.  Reads only state.json — no Google credentials needed.
+      # Exits 0 when all stores have sufficient variety; exits 1 when alert fires.
+      # continue-on-error keeps this step non-fatal.
+      - name: Alert on low photo variety
+        if: always()
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m meo.tools.photo_stale_alert || true
 
       # Save state after the run so the next run's duplicate guard has context.
       # continue-on-error: true guards against the first-ever run where state.json
