@@ -7785,3 +7785,76 @@ Needs Human Action section above). After API access is granted:
 5. Run `meo-run` live → first real post + replies + Q&A
 6. After first live run, check `meo-score-history` — should show today's grades
 7. Check Slack (if configured) — daily message + rating-alert + post-gap-alert
+
+---
+
+## Run 88 — 2026-10-03
+
+### What was done
+
+Two focused improvements to the daily monitoring pipeline.
+
+#### 1. `src/meo/tools/photo_stale_alert.py` — new offline alert tool
+
+Adds `meo-photo-stale-alert`, an alert that fires when any store's Drive photo
+rotation is showing critically low variety — a sign the Drive folder needs more
+photos to avoid repetitive daily posts.
+
+The check is entirely offline (no Google credentials required):
+- Reads `recent_images` from `state.json` for each store (last 5 used image IDs)
+- Skips stores with unconfigured `drive_folder_id` (still "TODO") silently
+- Skips stores with fewer than `--min-samples` (default: 5) history entries
+- Alerts when the unique image count is strictly below `--min-variety` (default: 3)
+
+CLI options:
+- `--min-samples N`  — minimum posts needed before checking (default: 5)
+- `--min-variety N`  — unique image threshold; alert when below this (default: 3)
+- `--dry-run`        — print without sending to Slack
+- `--store KEY [...]` — limit to specific store(s)
+
+Exit 0 = all stores OK (or not enough data); Exit 1 = alert fired.
+
+The alert message includes: store name, unique/recent counts, folder ID, and a
+hint to run `meo-photo-audit --live` for deeper diagnosis.
+
+#### 2. `.github/workflows/daily_run.yml` — two changes
+
+a. **New "Alert on low photo variety" CI step** added after the post-gap-alert
+step, running `python -m meo.tools.photo_stale_alert || true` on every daily run
+so the owner is notified via Slack before posts start cycling through the same
+images repeatedly.
+
+b. **Added `skip_qa` workflow_dispatch input** — the CLI has supported
+`--skip-qa` since Q&A was introduced, but the workflow never exposed this input,
+making it impossible to skip Q&A in a manual run from the GitHub UI. The input
+is now wired up alongside `skip_posts` and `skip_reviews`.
+
+#### 3. `pyproject.toml` — new entry point
+
+`meo-photo-stale-alert = "meo.tools.photo_stale_alert:main"` registered.
+
+#### Tests
+
+43 new tests in `tests/test_photo_stale_alert.py` (2024 total, up from 1981):
+- `TestComputeVariety` — full buffer, low unique, unconfigured/empty folder,
+  not enough samples, multi-store, result keys
+- `TestRunPhotoStaleAlert` — sufficient variety (no alert), below threshold,
+  exactly-at-threshold boundary, not enough data, unconfigured store,
+  multi-store partial/full alerts, custom min-samples
+- `TestFormatAlert` — store name/key, unique count, min-variety, folder ID,
+  audit hint, header count
+- `TestSendAlert` — no URL, success, HTTP error, connection error
+- `TestMain` — exit 0/1, dry-run skip, live send, store filter (unknown/valid),
+  custom min-samples/min-variety, invalid params, not enough data, unconfigured
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+6. After first live run, check `meo-score-history` — should show today's grades
+7. Check Slack (if configured) — daily message + rating-alert + post-gap-alert + photo-stale-alert
