@@ -7926,3 +7926,97 @@ Needs Human Action section above). After API access is granted:
 5. Run `meo-run` live → first real post + replies + Q&A
 6. After first live run, check `meo-score-history` — should show today's grades
 7. Check Slack (if configured) — daily message + rating-alert + post-gap-alert + photo-stale-alert
+
+---
+
+## Run 89 — 2026-10-07
+
+### What was done
+
+Added `meo-review-keyword-alert` — a new offline alert that fires when specific
+negative keywords appear in held review comments, categorised by theme.  This
+fills a gap between `meo-review-alert` (which flags all held reviews) and
+`meo-rating-alert` (which watches aggregate star trends): the keyword alert tells
+the owner not just *that* manual reviews are pending, but *what issue* is being
+raised — before it accumulates into a visible star-rating drop.
+
+#### 1. `src/meo/tools/review_keyword_alert.py` — new tool
+
+Reads `held_reviews` from `logs/state.json` for each store and scans each
+review's `comment` field against a configurable watchlist of keyword categories.
+One match per category per review is reported to avoid duplicates.
+
+Key design points:
+- **Entirely offline** — reads only `state.json`; no Google credentials required.
+- **One match per category per review** — first matching keyword within a category
+  wins, preventing duplicate category entries for the same review.
+- **Configurable** — keyword categories and keywords live in
+  `config/content.yaml` under `review_keyword_watchlist`; no code changes needed
+  to add/remove keywords.
+- Slack alert groups matches by (store, category), shows star rating, reviewer
+  name, and an 80-char comment excerpt with the matched keyword highlighted.
+- Gracefully no-ops when `review_keyword_watchlist` is not configured or empty
+  (exits 0 with a message to stderr), so it is safe to ship before the owner
+  has tailored the keyword list.
+
+CLI options:
+- `--dry-run`         — print without sending to Slack
+- `--store KEY [...]` — limit to specific store(s)
+
+Exit 0 = no keywords found in current held reviews; Exit 1 = alert fired.
+
+#### 2. `config/content.yaml` — new `review_keyword_watchlist` section
+
+Added four default categories for Japanese fitness/beauty businesses:
+- `清潔感・衛生` — cleanliness / hygiene complaints
+- `待ち時間・混雑` — wait-time / congestion complaints
+- `スタッフ対応` — staff attitude complaints
+- `料金・コスパ` — pricing / value-for-money complaints
+
+The owner can add, remove, or rename categories and keywords at any time
+without code changes.
+
+#### 3. `.github/workflows/daily_run.yml` — new CI step
+
+Added "Alert on review keyword hits" after the photo-stale-alert step.
+Runs `python -m meo.tools.review_keyword_alert || true` on every daily run
+so the owner is notified via Slack as soon as a negative-keyword review lands
+in the held queue — before the issue has had time to affect the star average.
+
+#### 4. `pyproject.toml` — new entry point
+
+`meo-review-keyword-alert = "meo.tools.review_keyword_alert:main"` registered.
+
+#### Tests
+
+58 new tests in `tests/test_review_keyword_alert.py` (2082 total, up from 2024):
+- `TestFindMatches` — no match, single keyword, first-keyword-wins within category,
+  multiple categories, only one match per category, case-insensitive ASCII,
+  empty comment, empty watchlist, missing/non-list keywords key
+- `TestLoadWatchlist` — loads from config, missing key, non-list value,
+  config exception
+- `TestStarSymbol` — five stars, one star, unknown, empty
+- `TestScanStore` — keyword match, positive review no match, empty/None comment,
+  multiple reviews, comment preview truncation, store info in result,
+  empty held, empty watchlist
+- `TestRunKeywordAlert` — no match, match in one store, matches across stores,
+  empty stores, empty watchlist, None watchlist loads from config,
+  empty config returns empty, multiple categories same review
+- `TestFormatAlert` — store name, category, keyword, comment preview, store/review
+  counts in header, star symbol, call to action
+- `TestSendAlert` — no URL, success, HTTP error, connection error
+- `TestMain` — exit 0 no match, exit 1 with match, dry-run skip, live send,
+  store filter, unknown store, no watchlist configured, filtered store clean
+
+### Next milestone
+
+All milestones complete.  **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section above).  After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+6. After first live run, check `meo-score-history` — should show today's grades
+7. Check Slack (if configured) — daily message + all alert tools
+

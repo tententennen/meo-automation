@@ -47,6 +47,39 @@ industry_tones:
       - "会員様の声・成果報告"
       - "スケジュール・イベント情報"
 
+# Review keyword watchlist — categories and keywords to scan for in held reviews.
+# When any keyword is found in a held review's comment, meo-review-keyword-alert
+# fires a Slack alert categorised by theme.  Add or remove entries freely without
+# code changes.  An empty list disables the check.
+review_keyword_watchlist:
+  - category: "清潔感・衛生"
+    keywords:
+      - "清潔感"
+      - "汚い"
+      - "汚れ"
+      - "臭い"
+      - "不衛生"
+  - category: "待ち時間・混雑"
+    keywords:
+      - "待ち時間"
+      - "待たされ"
+      - "混んでいる"
+      - "混雑"
+      - "時間がかかる"
+  - category: "スタッフ対応"
+    keywords:
+      - "対応が悪い"
+      - "無愛想"
+      - "態度が"
+      - "雑な対応"
+      - "横柄"
+  - category: "料金・コスパ"
+    keywords:
+      - "高い"
+      - "割高"
+      - "コスパが悪い"
+      - "値段の割に"
+
 # Words that must NOT appear in any generated content
 banned_words:
   - "激安"

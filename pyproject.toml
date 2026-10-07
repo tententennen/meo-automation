@@ -65,6 +65,7 @@ meo-update-post = "meo.tools.update_post:main"
 meo-qa = "meo.tools.qa:main"
 meo-post-gap-alert = "meo.tools.post_gap_alert:main"
 meo-photo-stale-alert = "meo.tools.photo_stale_alert:main"
+meo-review-keyword-alert = "meo.tools.review_keyword_alert:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

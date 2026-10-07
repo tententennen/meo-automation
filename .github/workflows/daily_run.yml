@@ -198,6 +198,17 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m meo.tools.photo_stale_alert || true
 
+      # Alert when any watchlist keyword (清潔感、待ち時間、etc.) appears in a held
+      # review comment, categorised by theme.  Fires before a rating drop is visible.
+      # Reads only state.json — no Google credentials needed.
+      # Exits 0 when no keywords found; exits 1 when alert fires.
+      - name: Alert on review keyword hits
+        if: always()
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m meo.tools.review_keyword_alert || true
+
       # Save state after the run so the next run's duplicate guard has context.
       # continue-on-error: true guards against the first-ever run where state.json
       # may not exist (e.g., dry-run with no stores configured).
