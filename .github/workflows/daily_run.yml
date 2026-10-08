@@ -220,6 +220,22 @@ jobs:
           path: logs/state.json
           key: meo-state-${{ github.run_id }}
 
+      # Persist state.json as a named artifact that overwrites on every run.
+      # This provides a durable backup when the Actions cache (10-day window)
+      # expires during a period of inactivity.  If the cache is cold on the
+      # next run the owner can download this artifact and restore state
+      # manually; the post-gap-alert will fire within 3 days if state is lost.
+      - name: Upload state artifact
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: meo-state
+          path: logs/state.json
+          retention-days: 90
+          overwrite: true
+          if-no-files-found: ignore
+
       - name: Upload log artifact
         if: always()
         uses: actions/upload-artifact@v4

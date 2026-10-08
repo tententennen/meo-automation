@@ -1,6 +1,64 @@
 # PROGRESS
 
-## Status: All milestones complete — 2024/2024 tests green (100% coverage on new code)
+## Status: All milestones complete — 2082/2082 tests green (100% coverage on new code)
+
+---
+
+## Completed this run (run 127)
+
+### feat(ci): durable state.json backup via Actions artifact + recover orphaned commits
+
+Two changes in this run:
+
+#### 1. Orphaned commits recovered onto main
+
+Two commits from session_01LJuGR2iUDyDKQ3ko7Jp9Sc were stranded on a
+detached HEAD and had not been pushed to origin/main:
+
+- `f58d84a` feat: add meo-review-keyword-alert for early keyword detection  
+  (58 new tests, 2082 total; content.yaml review_keyword_watchlist section)
+- `58108b0` chore: add uv.lock for reproducible dependency resolution
+
+Both were children of current main and recovered via `git merge --ff-only`.
+Test count header corrected from 2024 → 2082 to match actual suite count.
+
+#### 2. Durable state.json backup in `.github/workflows/daily_run.yml`
+
+**Problem**: state.json was only stored in a GitHub Actions cache with a
+~10-day rolling expiry. If the daily workflow stops running for >10 days (e.g.
+GitHub repo suspended for inactivity, or the owner manually pauses the
+schedule), the cache evicts and state is lost — causing the next live run to
+re-attempt replies on already-replied reviews and re-post content from day 1.
+
+**Fix**: Added a new "Upload state artifact" step immediately before the log
+upload that persists `logs/state.json` as a single named artifact (`meo-state`)
+with `overwrite: true` and 90-day retention.  The artifact always contains the
+freshest state from the most recent successful run, and can be downloaded from
+the GitHub Actions UI and restored manually to `logs/state.json` if the cache
+is cold.  The existing cache path is unchanged so the common case (daily run)
+remains fast.
+
+The `post-gap-alert` already detects state loss within 3 days; this backup
+gives the owner a concrete file to restore rather than rebuilding state from
+scratch.
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section below). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+6. After first live run, check `meo-score-history` — should show today's grades
+7. Check Slack (if configured) — daily message + all alert tools
+
+**State recovery**: if the `meo-state` cache is cold on a run, download the
+`meo-state` artifact from the most recent successful run in the GitHub Actions
+UI, unzip it, and copy `state.json` to `logs/state.json` in the repo root, then
+commit to a dev branch and push (the CI run picks it up from the cache save
+at the end of that run).
 
 ---
 
