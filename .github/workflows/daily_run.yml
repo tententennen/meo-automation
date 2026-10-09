@@ -59,13 +59,29 @@ jobs:
       # Restore the duplicate-post guard state from the previous run.
       # Cache key: unique per run so we always save a fresh snapshot;
       # restore-keys: picks up the most recent saved state automatically.
-      - name: Restore post state
+      - name: Restore post state (cache)
+        id: cache-restore
         uses: actions/cache/restore@v4
         with:
           path: logs/state.json
           key: meo-state-${{ github.run_id }}
           restore-keys: |
             meo-state-
+
+      # When the cache is cold (e.g. the repo was inactive for >10 days), fall
+      # back to the durable meo-state artifact uploaded at the end of the last
+      # successful run.  This makes state recovery automatic and avoids duplicate
+      # posts / re-replies that would occur if the run starts with an empty state.
+      - name: Restore post state (artifact fallback)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: meo-state
+          path: logs/
+          workflow: daily_run.yml
+          workflow_conclusion: success
+          if_no_artifact_found: ignore
 
       - name: Install dependencies
         # Install cffi first so the Rust cryptography extension (via google-auth)
@@ -223,8 +239,7 @@ jobs:
       # Persist state.json as a named artifact that overwrites on every run.
       # This provides a durable backup when the Actions cache (10-day window)
       # expires during a period of inactivity.  If the cache is cold on the
-      # next run the owner can download this artifact and restore state
-      # manually; the post-gap-alert will fire within 3 days if state is lost.
+      # next run, the artifact fallback step above restores it automatically.
       - name: Upload state artifact
         if: always()
         continue-on-error: true
