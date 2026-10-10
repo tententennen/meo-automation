@@ -4,6 +4,42 @@
 
 ---
 
+## Completed this run (run 129)
+
+### chore(ci): verify test suite health after date advance to 2026-10-10 + recover orphaned commits
+
+Routine maintenance run. Also recovered 4 orphaned commits from the prior session
+that were on a detached HEAD and had not been pushed to origin/main:
+
+- `f58d84a` feat: add meo-review-keyword-alert for early negative keyword detection
+- `58108b0` chore: add uv.lock for reproducible dependency resolution
+- `4574164` feat(ci): durable state.json backup via Actions artifact + recover orphaned commits
+- `be4de7a` feat(ci): auto-restore state.json from artifact when cache cold + archive PROGRESS
+
+All 4 were children of `943ab3e` (current main) and recovered via `git merge --ff-only`.
+
+**Note**: the CI workflow and local test run use `uv run --with pytest --with pytest-mock python -m pytest`
+to ensure the project's Python 3.11 venv is used (the standalone `pytest` binary installs under Python 3.13
+in this environment, which lacks the project's `pyyaml` dependency).
+
+All 2082 tests pass. No date-drift or other regressions detected.
+
+**Environment:** 2026-10-10 (JST). `TestMain` date-freezing continues to hold.
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section below). After API access is granted:
+1. Run `meo-status` → verify env vars and config
+2. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+3. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+4. Run `meo-run --dry-run` → all-store dry run
+5. Run `meo-run` live → first real post + replies + Q&A
+6. After first live run, check `meo-score-history` — should show today's grades
+7. Check Slack (if configured) — daily message + all alert tools
+
+---
+
 ## Completed this run (run 128)
 
 ### feat(ci): auto-restore state.json from durable artifact when cache is cold + archive old PROGRESS runs
