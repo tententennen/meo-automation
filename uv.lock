@@ -807,6 +807,13 @@ openai = [
     { name = "openai" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.25.0" },
@@ -823,6 +830,13 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31.0" },
 ]
 provides-extras = ["openai", "dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "pytest-mock", specifier = ">=3.16.0" },
+]
 
 [[package]]
 name = "oauthlib"

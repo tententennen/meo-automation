@@ -4,6 +4,38 @@
 
 ---
 
+## Completed this run (run 155)
+
+### chore(ci): verify test suite health after date advance to 2026-11-05
+
+Routine maintenance run. Local `main` was detached HEAD (run 154 was pushed to
+origin but local branch was left behind). Fast-forwarded via `git checkout main && git pull origin main`.
+
+**Fix:** `uv run pytest` was routing to a system pytest outside the venv, causing
+collection errors (ModuleNotFoundError for yaml, requests, google). Root cause: pytest
+was listed in `[project.optional-dependencies]` but not in `[dependency-groups]`, so
+`uv sync` skipped it. Fixed by running `uv sync --all-groups` which now installs dev
+dependencies properly. `uv run pytest` now works correctly.
+
+All 2082 tests pass with no date-drift or other regressions detected.
+
+**Environment:** 2026-11-05 (JST). `TestMain` date-freezing continues to hold.
+
+### Next milestone
+
+All milestones complete. **Remaining work is human action** (Steps 1–8 in the
+Needs Human Action section below). After API access is granted:
+1. Run `uv sync --all-groups` to install dev dependencies
+2. Run `meo-status` → verify env vars and config
+3. Run `meo-preview` → check LLM content quality (needs only `ANTHROPIC_API_KEY`)
+4. Run `meo-run --store the_body_kyoto --dry-run` → single-store dry run
+5. Run `meo-run --dry-run` → all-store dry run
+6. Run `meo-run` live → first real post + replies + Q&A
+7. After first live run, check `meo-score-history` — should show today's grades
+8. Check Slack (if configured) — daily message + all alert tools
+
+---
+
 ## Completed this run (run 154)
 
 ### chore(ci): verify test suite health after date advance to 2026-11-04
